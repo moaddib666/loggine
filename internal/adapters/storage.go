@@ -28,11 +28,18 @@ func NewSingleFileStorage(fileName string) *SingleFileStorage {
 	}
 }
 
+// AddLogRecord adds a log record to the storage
 func (f *SingleFileStorage) AddLogRecord(record domain.LogRecord) error {
 	_, err := f.writer.WriteLogRecord(record)
 	return err
 }
 
+// GetReader returns a reader for the storage
 func (f *SingleFileStorage) GetReader() ports.Scanner {
 	return f.readerFactory.NewReader()
+}
+
+// Flush flushes the storage
+func (f *SingleFileStorage) Flush() error {
+	return f.writer.Close()
 }

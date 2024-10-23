@@ -10,6 +10,7 @@ type Repository interface {
 
 type Writer interface {
 	WriteLogRecord(record domain.LogRecord) (int, error)
+	Close() error
 }
 
 type Scanner interface {
@@ -18,4 +19,14 @@ type Scanner interface {
 
 type ReaderFactory interface {
 	NewReader() Scanner
+}
+
+type LogTransformer interface {
+	ToString(record domain.LogRecord) string
+	FromString(str string) domain.LogRecord
+	FromBytes(b []byte) domain.LogRecord
+}
+
+type Filter interface {
+	FilterLogRecord(record domain.LogRecord) bool
 }
