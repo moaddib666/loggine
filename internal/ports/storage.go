@@ -4,8 +4,23 @@ import (
 	"LogDb/internal/domain"
 )
 
-type Repository interface {
+type DataFileRepository interface {
+	Open(fileName string) error
+	GetHeader() (*domain.DataFileHeader, error)
+	Close() error
+}
+
+type DataPageRepositoryWriter interface {
+	WriteLogRecord(record domain.LogRecord) error
+}
+
+type DataPageRepositoryReader interface {
+	Query(filterSet FilterSet) (*domain.QueryResult, error)
+}
+
+type DataPageManager interface {
 	AddLogRecord(record domain.LogRecord) error
+	GetReader() Scanner
 }
 
 type Writer interface {
@@ -14,7 +29,9 @@ type Writer interface {
 }
 
 type Scanner interface {
-	ScanLogRecord() (domain.LogRecord, int, error)
+	ScanLogRecord(filters FilterSet) (domain.LogRecord, int, error)
+	ScannedRecordsCount() int
+	Close() error
 }
 
 type ReaderFactory interface {
