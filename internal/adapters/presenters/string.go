@@ -10,7 +10,7 @@ import (
 type StringPresenter struct {
 }
 
-func (p *StringPresenter) Present(record domain.LogRecord) string {
+func (p *StringPresenter) Present(record *domain.LogRecord) string {
 	ts := record.Timestamp.Format("2006-01-02 15:04:05")
 	labels := ""
 	for i, label := range record.Labels {
