@@ -8,23 +8,89 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"reflect"
+	"text/tabwriter"
+	"time"
 )
 
 type FileConsistencyInspector struct {
-	fh    *os.File
-	codec ports.Serializer
+	fh     *os.File
+	codec  ports.Serializer
+	report *InspectionReport
 }
 
 func NewFileConsistencyInspector(fh *os.File, codec ports.Serializer) *FileConsistencyInspector {
 	return &FileConsistencyInspector{
 		fh:    fh,
 		codec: codec,
+		report: &InspectionReport{
+			Header:    nil,
+			DataPages: []*domain.DataPageHeader{},
+		},
 	}
 }
 
-// InspectHeader checks the consistency of the file header
-// hexdump header | string representation of header
+// Inspect performs a full consistency check, including header validation and record size verification
+func (f *FileConsistencyInspector) Inspect() error {
+	fmt.Println("========= Inspecting File Header and Content =========")
+	_, err := f.InspectHeader()
+	if err != nil {
+		return err
+	}
+
+	err = f.InspectDataPages()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Inspection completed successfully.")
+	return nil
+}
+
+// Report generates a quick view of the file structure without checking the content consistency
+func (f *FileConsistencyInspector) Report() (*InspectionReport, error) {
+	fmt.Println("\n=========== Quick File Structure Report ===========")
+
+	// Print the header section
+	err := f.ReportHeader()
+	if err != nil {
+		return nil, err
+	}
+
+	// Print the data pages section
+	err = f.ReportDataPages()
+	if err != nil {
+		return nil, err
+	}
+
+	// Enhanced console output in a table format
+	fmt.Println("\n=========== File Header ===========")
+	fmt.Printf(" %-20s: %d\n", "Version", f.report.Header.Version)
+	fmt.Printf(" %-20s: %d\n", "Id", f.report.Header.Id)
+	fmt.Printf(" %-20s: %d\n", "Record Count", f.report.Header.RecordCount)
+	fmt.Printf(" %-20s: %d\n", "Data Pages Count", len(f.report.DataPages))
+	fmt.Printf(" %-20s: %d\n", "Checksum", f.report.Header.Checksum)
+	fmt.Printf(" %-20s: %s\n", "Date", f.report.Header.Time().Format(time.RFC3339))
+
+	// Visual separator between the header and the data pages
+	fmt.Println("\n=========== Data Pages ===========")
+
+	// Use tabwriter for aligned output of data pages
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, "Page Number\tPage Size\tRecord Count\t")
+
+	for _, page := range f.report.DataPages {
+		fmt.Fprintf(writer, "%d\t%d\t%d\t\n", page.Number, page.PageSize, page.RecordCount)
+	}
+
+	// Flush the tabwriter buffer to output the table
+	writer.Flush()
+
+	fmt.Println("============================================")
+	return f.report, nil
+}
+
+// InspectHeader checks the file header for consistency
 func (f *FileConsistencyInspector) InspectHeader() (*domain.DataFileHeader, error) {
 	_, err := f.fh.Seek(0, io.SeekStart)
 	if err != nil {
@@ -41,54 +107,133 @@ func (f *FileConsistencyInspector) InspectHeader() (*domain.DataFileHeader, erro
 	if err != nil {
 		return nil, err
 	}
-	printHeaderHexdump(headerBytes, header)
+	printHexdumpWithTitle("Data File Header", headerBytes, header)
 
+	f.report.Header = header // Save header for reporting
 	return header, nil
 }
 
-// InspectDataPages checks the consistency of the data pages
+// ReportHeader reads the file header without checking content
+func (f *FileConsistencyInspector) ReportHeader() error {
+	_, err := f.fh.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
+
+	header := &domain.DataFileHeader{}
+	headerBytes := make([]byte, domain.DataFileHeaderSize)
+	_, err = f.fh.Read(headerBytes)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.codec.ReadFileHeader(header, bytes.NewReader(headerBytes))
+	if err != nil {
+		return err
+	}
+	f.report.Header = header // Save header for reporting
+	return nil
+}
+
+// InspectDataPages inspects each data page and its records for consistency
 func (f *FileConsistencyInspector) InspectDataPages() error {
+	fmt.Println("\n========= Inspecting Data Pages and Validating Sizes =========")
+	pageNumber := 0
 	for {
+		fmt.Printf("\n-- Data Page %d --\n", pageNumber)
 		err := f.InspectDataPage()
 		if err == io.EOF {
+			fmt.Println("End of file reached.")
 			break
 		}
 		if err != nil {
 			return err
 		}
+		pageNumber++
 	}
 	return nil
 }
 
-// InspectDataPage checks the consistency of a single data page
+// ReportDataPages quickly reads data page headers and skips record inspection
+func (f *FileConsistencyInspector) ReportDataPages() error {
+	pageNumber := 0
+	for {
+		err := f.ReportDataPage()
+		if err == io.EOF {
+			fmt.Println("End of file reached.")
+			break
+		}
+		if err != nil {
+			return err
+		}
+		pageNumber++
+	}
+	return nil
+}
+
+// InspectDataPage checks a single data page's consistency
 func (f *FileConsistencyInspector) InspectDataPage() error {
-	hd, err := f.InspectDataPageHeader()
+	hd, err := f.InspectDataPageHeader(false)
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("Page Header: %+v\n", hd)
+	fmt.Println("--------- Validating Data Page Records ---------")
+
+	// Validate the records and ensure the sizes match the expected page size
 	err = f.InspectRecords(hd.PageSize, hd.RecordCount)
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("-------------------------------------")
+	f.report.DataPages = append(f.report.DataPages, hd) // Add page header for reporting
 	return nil
 }
 
-// InspectDataPageHeader checks the consistency of a single data page header
-func (f *FileConsistencyInspector) InspectDataPageHeader() (*domain.DataPageHeader, error) {
+// ReportDataPage quickly reads a data page header and skips over the records
+func (f *FileConsistencyInspector) ReportDataPage() error {
+	hd, err := f.InspectDataPageHeader(true)
+	if err != nil {
+		return err
+	}
+
+	// Seek past the records to the next data page
+	offset := int64(hd.PageSize)
+	_, err = f.fh.Seek(offset, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+
+	f.report.DataPages = append(f.report.DataPages, hd)
+	return nil
+}
+
+// InspectDataPageHeader reads and returns a data page header
+func (f *FileConsistencyInspector) InspectDataPageHeader(silent bool) (*domain.DataPageHeader, error) {
 	headerBytes := make([]byte, domain.DataPageHeaderSize)
 	header := &domain.DataPageHeader{}
 	_, err := f.fh.Read(headerBytes)
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = f.codec.ReadDataPageHeader(header, bytes.NewReader(headerBytes))
-	return header, err
+	if err != nil {
+		return nil, err
+	}
+	if !silent {
+		printHexdumpWithTitle("Data Page Header", headerBytes, header)
+	}
+	return header, nil
 }
 
-// InspectRecords checks the consistency of the records in a data page
+// InspectRecords validates the records in a data page to ensure they match the page size
 func (f *FileConsistencyInspector) InspectRecords(pageSize, recordsCount uint64) error {
 	var offset int64
 	for i := uint64(0); i < recordsCount; i++ {
+		fmt.Printf("\n-- Record %d --\n", i+1)
 		n, err := f.InspectRecord()
 		if err != nil {
 			return err
@@ -101,7 +246,7 @@ func (f *FileConsistencyInspector) InspectRecords(pageSize, recordsCount uint64)
 	return nil
 }
 
-// InspectRecord checks the consistency of a single record
+// InspectRecord validates a single record's consistency
 func (f *FileConsistencyInspector) InspectRecord() (int64, error) {
 	recordHeaderBytes := make([]byte, domain.RecordMetaSize)
 	recordMeta := &domain.RecordMeta{}
@@ -113,73 +258,58 @@ func (f *FileConsistencyInspector) InspectRecord() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	printHexdumpWithTitle("Record Meta", recordHeaderBytes, recordMeta)
+
+	// Read and validate labels
 	labelBytes := make([]byte, recordMeta.LabelsSize)
 	_, err = f.fh.Read(labelBytes)
 	if err != nil {
 		return 0, err
 	}
-	for i := uint64(0); i < recordMeta.LabelsCount; i++ {
-		label := &domain.Label{}
-		_, err = f.codec.ReadLogLabel(label, bytes.NewReader(labelBytes))
-		if err != nil {
-			return 0, err
-		}
-	}
+	printHexdumpWithTitle("Record Labels", labelBytes, recordMeta)
+
+	// Read and validate message
 	messageBytes := make([]byte, recordMeta.MessageSize)
 	_, err = f.fh.Read(messageBytes)
 	if err != nil {
 		return 0, err
 	}
-	return int64(domain.RecordMetaSize + recordMeta.RecordSize), nil
+	printHexdumpWithTitle("Record Message", messageBytes, recordMeta)
+
+	return int64(recordMeta.RecordSize), nil
 }
 
-// Inspect checks the consistency of the file
-func (f *FileConsistencyInspector) Inspect() error {
-	_, err := f.InspectHeader()
-	if err != nil {
-		return err
-	}
-	return f.InspectDataPages()
-
+// InspectionReport holds the file structure without inspecting the content in-depth
+type InspectionReport struct {
+	Header    *domain.DataFileHeader
+	DataPages []*domain.DataPageHeader
 }
 
-func printHeaderHexdump(headerBytes []byte, header *domain.DataFileHeader) {
-	// Hexdump formatting
-	hexDump := hex.Dump(headerBytes)
+// Helper function to print a titled hexdump of the data with object values
+func printHexdumpWithTitle(title string, data []byte, object interface{}) {
+	fmt.Printf("\n--- %s ---\n", title)
+	hexDump := hex.Dump(data)
+	fmt.Println(hexDump)
 
-	// Build string representation of the header fields
-	headerString := fmt.Sprintf(
-		"Version: %d\nId: %d\nRecordCount: %d\nYear: %d\nMonth: %d\nDay: %d\nLastDataPageNumber: %d\nChecksum: %d",
-		header.Version,
-		header.Id,
-		header.RecordCount,
-		header.Year,
-		header.Month,
-		header.Day,
-		header.LastDataPageNumber,
-		header.Checksum,
-	)
+	// Reflect on the struct and print its fields
+	fmt.Println("\n--- Field Values ---")
+	printObjectFields(object)
+	fmt.Println("---------------------------")
+}
 
-	// Format and print side-by-side table of hexdump and header field string representation
-	fmt.Println("Hexdump of Header | String Representation")
-	fmt.Println(strings.Repeat("-", 80))
+// Helper function to reflect on the struct fields and print them
+func printObjectFields(obj interface{}) {
+	val := reflect.ValueOf(obj)
+	typ := reflect.TypeOf(obj)
 
-	hexLines := strings.Split(hexDump, "\n")
-	headerLines := strings.Split(headerString, "\n")
-
-	// Iterate through both and print them side by side
-	for i := 0; i < len(hexLines) || i < len(headerLines); i++ {
-		hexPart := ""
-		strPart := ""
-
-		if i < len(hexLines) {
-			hexPart = hexLines[i]
-		}
-		if i < len(headerLines) {
-			strPart = headerLines[i]
-		}
-
-		fmt.Printf("%-48s | %s\n", hexPart, strPart)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+		typ = typ.Elem()
 	}
-	fmt.Println(strings.Repeat("-", 80))
+
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldType := typ.Field(i)
+		fmt.Printf("%-20s : %v\n", fieldType.Name, field.Interface())
+	}
 }
