@@ -6,7 +6,7 @@ import (
 	"log"
 )
 
-var _ ports.Repository = &SingleFileStorage{}
+var _ ports.DataPageManager = &SingleFileStorage{}
 
 type SingleFileStorage struct {
 	writer        ports.Writer
