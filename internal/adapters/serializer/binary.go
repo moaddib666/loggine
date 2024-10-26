@@ -9,6 +9,8 @@ import (
 type BinarySerializer struct {
 }
 
+var Default = &BinarySerializer{}
+
 // WriteLogRecord writes log record to writer
 func (b *BinarySerializer) WriteLogRecord(record *domain.LogRecord, writer io.Writer) (int, error) {
 	var err error
@@ -119,9 +121,20 @@ func (b *BinarySerializer) ReadDataPageHeader(header *domain.DataPageHeader, rea
 }
 
 func (b *BinarySerializer) WriteFileHeader(header *domain.DataFileHeader, writer io.Writer) (int, error) {
+	header.UpdateChecksum()
 	return domain.DataFileHeaderSize, binary.Write(writer, binary.LittleEndian, header)
 }
 
 func (b *BinarySerializer) ReadFileHeader(header *domain.DataFileHeader, reader io.Reader) (int, error) {
 	return domain.DataFileHeaderSize, binary.Read(reader, binary.LittleEndian, header)
+}
+
+// WriteWALHeader writes WAL header to writer
+func (b *BinarySerializer) WriteWALHeader(header *domain.WALHeader, writer io.Writer) (int, error) {
+	return domain.WALHeaderSize, binary.Write(writer, binary.LittleEndian, header)
+}
+
+// ReadWALHeader reads WAL header from reader
+func (b *BinarySerializer) ReadWALHeader(header *domain.WALHeader, reader io.Reader) (int, error) {
+	return domain.WALHeaderSize, binary.Read(reader, binary.LittleEndian, header)
 }
