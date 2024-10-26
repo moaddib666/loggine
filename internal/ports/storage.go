@@ -46,7 +46,7 @@ type LogTransformer interface {
 
 type DataStorage interface {
 	GetDataFilesHeaders() ([]*domain.DataFileHeader, error)
-
+	// TODO: Add flags to the function like readonly, writeonly, readwrite
 	GetDataFile(name string) (*domain.DataFile, error)
 	CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
 
@@ -54,7 +54,7 @@ type DataStorage interface {
 	CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
 
 	StoreLogRecord(record *domain.LogRecord) error
-	Query(filterSet FilterSet) (*domain.QueryResult, error)
+	Query(query *domain.Query) (*domain.QueryResult, error)
 
 	GetFileExt() string
 

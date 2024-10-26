@@ -14,15 +14,16 @@ func init() {
 
 // DataFileHeader represents the header of the data file.
 type DataFileHeader struct {
-	Version            uint64    // 8 bytes
-	Id                 uint32    // 4 bytes
-	RecordCount        uint64    // 8 bytes
-	Year               uint64    // 8 bytes
-	Month              uint64    // 8 bytes
-	Day                uint64    // 8 bytes
-	LastDataPageNumber uint32    // 4 bytes (0 - 1439 pages / minutes)
-	Reserved           [256]byte // 256 bytes reserved for future use
-	Checksum           uint64    // 8 bytes
+	Version             uint64    // 8 bytes
+	Id                  uint32    // 4 bytes
+	RecordCount         uint64    // 8 bytes
+	Year                uint64    // 8 bytes
+	Month               uint64    // 8 bytes
+	Day                 uint64    // 8 bytes
+	LastDataPageNumber  uint32    // 4 bytes (0 - 1439 pages / minutes)
+	FirstDataPageNumber uint32    // 4 bytes
+	Reserved            [252]byte // 256 bytes reserved for future use
+	Checksum            uint64    // 8 bytes
 } // 312 bytes
 const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
 	unsafe.Sizeof(DataFileHeader{}.Id) +
@@ -31,10 +32,26 @@ const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
 	unsafe.Sizeof(DataFileHeader{}.Month) +
 	unsafe.Sizeof(DataFileHeader{}.Day) +
 	unsafe.Sizeof(DataFileHeader{}.LastDataPageNumber) +
+	unsafe.Sizeof(DataFileHeader{}.FirstDataPageNumber) +
 	unsafe.Sizeof(DataFileHeader{}.Reserved) +
 	unsafe.Sizeof(DataFileHeader{}.Checksum))
 
-// Checksum calculates the checksum of the header.
+const MaxDataPagesInDataFile = 1440
+
+// NewDataFileHeader creates a new DataFileHeader.
+func NewDataFileHeader(version uint64, id uint32, year uint64, month uint64, day uint64) *DataFileHeader {
+	return &DataFileHeader{
+		Version:             version,
+		Id:                  id,
+		Year:                year,
+		Month:               month,
+		Day:                 day,
+		FirstDataPageNumber: 0,
+		LastDataPageNumber:  0,
+	}
+}
+
+// UpdateChecksum calculates the checksum of the header.
 func (h *DataFileHeader) UpdateChecksum() {
 	h.Checksum = h.Month + h.Day + h.Year + h.RecordCount + uint64(h.LastDataPageNumber) + uint64(h.Id) + h.Version
 }

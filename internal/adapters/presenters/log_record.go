@@ -7,10 +7,10 @@ import (
 	"math"
 )
 
-type StringPresenter struct {
+type LogRecordRawStringPresenter struct {
 }
 
-func (p *StringPresenter) Present(record *domain.LogRecord) string {
+func (p *LogRecordRawStringPresenter) Present(record *domain.LogRecord) string {
 	ts := record.Timestamp.Format("2006-01-02 15:04:05")
 	labels := ""
 	for i, label := range record.Labels {
@@ -32,7 +32,7 @@ func (p *StringPresenter) Present(record *domain.LogRecord) string {
 	return fmt.Sprintf("%s - [%s] %s\n", ts, labels, message)
 }
 
-// NewStringPresenter creates a new StringPresenter
-func NewStringPresenter() *StringPresenter {
-	return &StringPresenter{}
+// NewLogRecordRawStringPresenter creates a new LogRecordRawStringPresenter
+func NewLogRecordRawStringPresenter() *LogRecordRawStringPresenter {
+	return &LogRecordRawStringPresenter{}
 }

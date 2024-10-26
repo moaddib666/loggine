@@ -71,6 +71,17 @@ func (f *FileConsistencyInspector) Report() (*InspectionReport, error) {
 	fmt.Printf(" %-20s: %d\n", "Data Pages Count", len(f.report.DataPages))
 	fmt.Printf(" %-20s: %d\n", "Checksum", f.report.Header.Checksum)
 	fmt.Printf(" %-20s: %s\n", "Date", f.report.Header.Time().Format(time.RFC3339))
+	fmt.Println("============================================")
+	fmt.Printf(" %-20s: %d\n", "First Data Page Number", f.report.Header.FirstDataPageNumber)
+	fmt.Printf(" %-20s: %d\n", "Last Data Page Number", f.report.Header.LastDataPageNumber)
+	startMinute := f.report.Header.Time().Add(time.Duration(f.report.Header.FirstDataPageNumber) * time.Minute)
+	endMinute := f.report.Header.Time().Add(time.Duration(f.report.Header.LastDataPageNumber) * time.Minute)
+	// Print the first and last data page timestamps
+	fmt.Printf(" %-20s: %s\n", "First Data Page Time", startMinute.Format(time.RFC3339))
+	fmt.Printf(" %-20s: %s\n", "Last Data Page Time", endMinute.Format(time.RFC3339))
+	// Total minutes in the file
+	totalMinutes := f.report.Header.LastDataPageNumber - f.report.Header.FirstDataPageNumber + 1
+	fmt.Printf(" %-20s: %d\n", "Total Minutes", totalMinutes)
 
 	// Visual separator between the header and the data pages
 	fmt.Println("\n=========== Data Pages ===========")

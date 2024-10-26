@@ -43,5 +43,5 @@ func main() {
 	defer stor.Close()
 	loader.LoadApacheLogsFromFile(ApacheLogsFile, func(record *domain.LogRecord) error {
 		return stor.StoreLogRecord(record)
-	}, 0)
+	}, 5)
 }

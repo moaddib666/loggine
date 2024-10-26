@@ -4,7 +4,6 @@ import (
 	"LogDb/internal/domain"
 	"LogDb/internal/ports"
 	"github.com/google/uuid"
-	"io"
 	"sync"
 	"time"
 )
@@ -25,13 +24,28 @@ type Timestamp struct {
 	storage ports.DataStorage
 }
 
-func (t *Timestamp) GetDataFilesForRead() ([]io.ReadSeekCloser, error) {
+func (t *Timestamp) GetDataFilesForRead(q *domain.Query) ([]*domain.DataFile, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	var files []io.ReadSeekCloser
+	var files []*domain.DataFile
 	for _, dfs := range t.index {
+		// TODO: optimise search for the date range
 		for _, df := range dfs {
+			// if the data file is not in the range of the query, skip it
+			if df.Time().Before(q.From) || df.Time().After(q.To) {
+				continue
+			}
+			// This need to be check on exact datapage
+			// Check last data page number - aka minute number
+			//if df.LastDataPageNumber < uint32(q.From.Hour()*60+q.From.Minute()) {
+			//	continue
+			//}
+			// Check first data page number - aka minute number
+			// TODO: implement FirstDataPageNumber as not not in protocol
+			//if df.FirstDataPageNumber > uint32(q.To.Hour()*60+q.To.Minute()) {
+			//	continue
+			//}
 			fh, err := t.storage.GetDataFile(df.String())
 			if err != nil {
 				return nil, err

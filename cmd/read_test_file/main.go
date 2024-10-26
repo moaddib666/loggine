@@ -16,7 +16,7 @@ const fileName = "test.chunk"
 func main() {
 
 	codec := &serializer.BinarySerializer{}
-	presenter := presenters.NewStringPresenter()
+	presenter := presenters.NewLogRecordRawStringPresenter()
 	fh, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		panic(err)

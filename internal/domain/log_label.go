@@ -6,7 +6,7 @@ const IntLabelType uint8 = 1
 const FloatLabelType uint8 = 2
 
 type Label struct {
-	Type  uint8  // Label type: 0 = string, 1 = int, 2 = float
-	Size  uint64 // Size of the label value in bytes
-	Value []byte // The raw value of the label in a byte slice
+	Type  uint8  // Label type: 0 = string, 1 = int, 2 = float (uint8 - 1 byte)
+	Size  uint64 // Size of the label value in bytes (uint64 - 8 bytes)
+	Value []byte // The raw value of the label in a byte slice (variable size)
 }

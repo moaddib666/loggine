@@ -58,6 +58,9 @@ func (b *BinarySerializer) WriteLogRecordMeta(header *domain.RecordMeta, writer 
 }
 
 func (b *BinarySerializer) WriteLogLabel(label *domain.Label, writer io.Writer) (int, error) {
+	if label.Size == 0 {
+		label.Size = uint64(len(label.Value))
+	}
 	offset := 0
 	// write label type
 	if err := binary.Write(writer, binary.LittleEndian, label.Type); err != nil {
@@ -100,7 +103,7 @@ func (b *BinarySerializer) ReadLogLabel(label *domain.Label, reader io.Reader) (
 	offset += 8
 	// read label value
 	label.Value = make([]byte, label.Size)
-	if err := binary.Read(reader, binary.LittleEndian, label.Value); err != nil {
+	if err := binary.Read(reader, binary.LittleEndian, &label.Value); err != nil {
 		return offset, err
 	}
 	offset += int(label.Size)

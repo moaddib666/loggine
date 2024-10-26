@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const defaultFileExt = ".chunk"
@@ -176,14 +177,8 @@ func (p *PersistentStorage) CreateDataFile(name string, id uint32, y, m, d uint6
 		return nil, fmt.Errorf("failed to create data file %s: %w", name, err)
 	}
 	df := &domain.DataFile{
-		Header: &domain.DataFileHeader{
-			Version: 1,
-			Id:      id,
-			Year:    y,
-			Month:   m,
-			Day:     d,
-		},
-		File: fh,
+		Header: domain.NewDataFileHeader(1, id, y, m, d),
+		File:   fh,
 	}
 	_, err = p.codec.WriteFileHeader(df.Header, fh)
 	if err != nil {
@@ -205,7 +200,7 @@ func (p *PersistentStorage) GetDataPage(pageNumber uint32, df *domain.DataFile) 
 		}
 		if dph.Number < pageNumber {
 			// Skip the data page
-			_, err = df.File.Seek(int64(dph.PageSize), io.SeekCurrent)
+			_, err = df.File.Seek(int64(dph.PageSize)-int64(domain.RecordMetaSize), io.SeekCurrent)
 			if err != nil {
 				return nil, fmt.Errorf("failed to seek data page: %w", err)
 			}
@@ -225,6 +220,23 @@ func (p *PersistentStorage) GetDataPage(pageNumber uint32, df *domain.DataFile) 
 	return nil, fmt.Errorf("data page not found: %d", pageNumber)
 }
 
+// NextDataPage returns the next data page in the data file
+func (p *PersistentStorage) NextDataPage(df *domain.DataFile) (*domain.DataPage, error) {
+	// Read the data page header
+	var dph domain.DataPageHeader
+	_, err := p.codec.ReadDataPageHeader(&dph, df.File)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read data page header: %w", err)
+	}
+	return &domain.DataPage{
+		Header:          &dph,
+		ReadWriteSeeker: df.File,
+	}, nil
+}
+
 func (p *PersistentStorage) CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error) {
 	// Create a new data page
 	dph := &domain.DataPageHeader{
@@ -232,11 +244,18 @@ func (p *PersistentStorage) CreateDataPage(df *domain.DataFile, pageNumber uint3
 		PageSize:    0,
 		RecordCount: 0,
 	}
+	if df.Header.LastDataPageNumber > pageNumber {
+		return nil, fmt.Errorf("data page already exists: %d", pageNumber)
+	}
+
 	_, err := p.codec.WriteDataPageHeader(dph, df.File)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write data page header: %w", err)
 	}
 	df.Header.LastDataPageNumber = pageNumber
+	if df.Header.FirstDataPageNumber == 0 && df.Header.RecordCount == 0 {
+		df.Header.FirstDataPageNumber = pageNumber
+	}
 	return &domain.DataPage{
 		Header:          dph,
 		ReadWriteSeeker: df.File,
@@ -311,6 +330,8 @@ func (p *PersistentStorage) closeDataFile(df *domain.DataFile) error {
 	}
 	return p.updateIndex(df.Header)
 }
+
+// StoreLogRecord stores the log record in the persistent storage
 func (p *PersistentStorage) StoreLogRecord(record *domain.LogRecord) error {
 	p.writeCursor.Lock()
 	defer p.writeCursor.Unlock()
@@ -389,9 +410,71 @@ func (p *PersistentStorage) StoreLogRecord(record *domain.LogRecord) error {
 	return nil
 }
 
-func (p *PersistentStorage) Query(filterSet ports.FilterSet) (*domain.QueryResult, error) {
-	//TODO implement me
-	panic("implement me")
+// Query queries the log records in the persistent storage
+func (p *PersistentStorage) Query(q *domain.Query) (*domain.QueryResult, error) {
+	result := domain.NewQueryResult(q)
+	defer result.SpentTime(time.Since(time.Now()))
+	// Query the primary index
+	dataFiles, err := p.primaryIndex.GetDataFilesForRead(q)
+	if err != nil {
+		return result, fmt.Errorf("failed to query primary index: %w", err)
+	}
+	// Iterate over the data files
+	for _, df := range dataFiles {
+		// Get the data page for the query
+		// TODO: detect page number for 1 and last file to not filter through all records from start
+
+		dp, err := p.NextDataPage(df)
+		if err != nil {
+			log.Printf("failed to get data page: %v", err)
+			break
+		}
+		// TODO: Filter by pages if page not in before after we could not prcess it just skip
+		// Read through the data page
+		for i := 0; i < int(dp.Header.RecordCount); i++ {
+			recordMetadata := &domain.RecordMeta{}
+			offset, err := p.codec.ReadLogRecordMeta(recordMetadata, dp)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return result, fmt.Errorf("failed to read log record: %w", err)
+			}
+			// Check if the record is in the query range
+			if recordMetadata.Timestamp < uint64(q.From.UTC().Unix()) || recordMetadata.Timestamp > uint64(q.To.UTC().Unix()) {
+				result.Miss()
+				_, err := dp.Seek(int64(recordMetadata.RecordSize)-int64(offset), io.SeekCurrent)
+				if err != nil {
+					return result, err
+				}
+				continue
+			}
+
+			logRecord := domain.LogRecord{
+				SchemaVersion: 0,
+				Labels:        make([]domain.Label, recordMetadata.LabelsCount, recordMetadata.LabelsCount),
+				Message:       make([]byte, recordMetadata.MessageSize, recordMetadata.MessageSize),
+				Timestamp:     time.Unix(int64(recordMetadata.Timestamp), 0),
+			}
+			// Read Labels
+			for i := 0; i < int(recordMetadata.LabelsCount); i++ {
+				_, err = p.codec.ReadLogLabel(&logRecord.Labels[0], dp)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// Read Message
+			_, err = dp.Read(logRecord.Message)
+			if err != nil {
+				return result, fmt.Errorf("failed to read message: %w", err)
+			}
+			// Append the log record to the result
+			result.Hit(&logRecord)
+		}
+		_ = df.Close()
+	}
+	return result, nil
 }
 
 func (p *PersistentStorage) Close() error {

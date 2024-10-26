@@ -17,7 +17,7 @@ type ApacheLogTransformer struct {
 // ToString converts a LogRecord to an Apache combined log string format
 func (t *ApacheLogTransformer) ToString(record *domain.LogRecord) string {
 	timestampStr := record.Timestamp.Format(apacheCombinedLogTimeFormat)
-	return fmt.Sprintf("%s - - [%s] %s", record.Labels, timestampStr, record.Message)
+	return fmt.Sprintf("%v - - [%s] %s", record.Labels, timestampStr, record.Message)
 }
 
 // FromString converts an Apache combined log string to a LogRecord

@@ -12,7 +12,7 @@ type QueryReport struct {
 	ElapsedTime time.Duration
 }
 
-// NewQueryReport creates a new query report with the given ID and count.
+// NewQueryReport creates a new query_types report with the given ID and count.
 func NewQueryReport(count, hits int, startTime time.Time) QueryReport {
 	return QueryReport{
 		Id:          uuid.New(),
