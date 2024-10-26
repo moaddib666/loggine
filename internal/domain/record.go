@@ -1,5 +1,14 @@
 package domain
 
+import (
+	"log"
+	"unsafe"
+)
+
+func init() {
+	log.Printf("Initialized with RecordMetaSize: %d\n", RecordMetaSize)
+}
+
 // RecordMeta represents the metadata of a record.
 // The total size of RecordMeta is 64 bytes.
 type RecordMeta struct {
@@ -11,7 +20,12 @@ type RecordMeta struct {
 	MessageSize   uint64 // 8 bytes - Size of the message in bytes
 }
 
-const RecordMetaSize = 64
+const RecordMetaSize = int(unsafe.Sizeof(RecordMeta{}.Timestamp) +
+	unsafe.Sizeof(RecordMeta{}.RecordSize) +
+	unsafe.Sizeof(RecordMeta{}.SchemaVersion) +
+	unsafe.Sizeof(RecordMeta{}.LabelsSize) +
+	unsafe.Sizeof(RecordMeta{}.LabelsCount) +
+	unsafe.Sizeof(RecordMeta{}.MessageSize))
 
 // Record represents a complete record, including metadata, labels, and message.
 type Record struct {
