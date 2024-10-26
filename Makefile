@@ -11,5 +11,11 @@ GO_FLAGS=-ldflags="-s -w"
 .build-data-node:
 	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/data-node ./cmd/data-node/...
 
-build: .build-inspector .build-data-node
+.build-client:
+	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/client ./cmd/cli/...
+
+.build-compressor:
+	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/compressor ./cmd/compression_challange/...
+
+build: .build-inspector .build-data-node .build-client .build-compressor
 
