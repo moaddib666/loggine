@@ -15,13 +15,13 @@ type ApacheLogTransformer struct {
 }
 
 // ToString converts a LogRecord to an Apache combined log string format
-func (t *ApacheLogTransformer) ToString(record domain.LogRecord) string {
+func (t *ApacheLogTransformer) ToString(record *domain.LogRecord) string {
 	timestampStr := record.Timestamp.Format(apacheCombinedLogTimeFormat)
 	return fmt.Sprintf("%s - - [%s] %s", record.Labels, timestampStr, record.Message)
 }
 
 // FromString converts an Apache combined log string to a LogRecord
-func (t *ApacheLogTransformer) FromString(str string) domain.LogRecord {
+func (t *ApacheLogTransformer) FromString(str string) *domain.LogRecord {
 	record := domain.NewEmptyLogRecord()
 
 	// Split the log entry into parts using spaces, keeping quoted parts together
@@ -55,7 +55,7 @@ func (t *ApacheLogTransformer) FromString(str string) domain.LogRecord {
 }
 
 // FromBytes converts a byte array to a LogRecord (assuming the byte array is a string)
-func (t *ApacheLogTransformer) FromBytes(b []byte) domain.LogRecord {
+func (t *ApacheLogTransformer) FromBytes(b []byte) *domain.LogRecord {
 	str := string(b)
 	return t.FromString(str)
 }
