@@ -20,4 +20,7 @@ type Serializer interface {
 	WriteLogRecordMeta(header *domain.RecordMeta, writer io.Writer) (int, error)
 	WriteLogLabel(label *domain.Label, writer io.Writer) (int, error)
 	WriteLogRecordMessage(message []byte, writer io.Writer) (int, error)
+
+	WriteWALHeader(header *domain.WALHeader, writer io.Writer) (int, error)
+	ReadWALHeader(header *domain.WALHeader, reader io.Reader) (int, error)
 }
