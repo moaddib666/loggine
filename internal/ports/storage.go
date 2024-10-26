@@ -39,11 +39,24 @@ type ReaderFactory interface {
 }
 
 type LogTransformer interface {
-	ToString(record domain.LogRecord) string
-	FromString(str string) domain.LogRecord
-	FromBytes(b []byte) domain.LogRecord
+	ToString(record *domain.LogRecord) string
+	FromString(str string) *domain.LogRecord
+	FromBytes(b []byte) *domain.LogRecord
 }
 
-type Filter interface {
-	FilterLogRecord(record domain.LogRecord) bool
+type DataStorage interface {
+	GetDataFilesHeaders() ([]*domain.DataFileHeader, error)
+
+	GetDataFile(name string) (*domain.DataFile, error)
+	CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
+
+	GetDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
+	CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
+
+	StoreLogRecord(record *domain.LogRecord) error
+	Query(filterSet FilterSet) (*domain.QueryResult, error)
+
+	GetFileExt() string
+
+	Close() error
 }
