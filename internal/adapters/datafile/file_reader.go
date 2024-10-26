@@ -1,4 +1,4 @@
-package repository
+package datafile
 
 import (
 	"LogDb/internal/domain"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type DataFileReader struct {
+type Reader struct {
 	codec  ports.Serializer
 	fh     *os.File
 	header *domain.DataFileHeader
@@ -24,12 +24,12 @@ type DataFileReader struct {
 }
 
 // NewDataFileReader creates a new DataFileReader
-func NewDataFileReader(codec ports.Serializer) *DataFileReader {
-	return &DataFileReader{
+func NewDataFileReader(codec ports.Serializer) *Reader {
+	return &Reader{
 		codec: codec,
 	}
 }
-func (d *DataFileReader) Open(fileName string) error {
+func (d *Reader) Open(fileName string) error {
 	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0600)
 	if err == nil {
 		d.fh = file
@@ -38,7 +38,7 @@ func (d *DataFileReader) Open(fileName string) error {
 
 }
 
-func (d *DataFileReader) GetHeader() (*domain.DataFileHeader, error) {
+func (d *Reader) GetHeader() (*domain.DataFileHeader, error) {
 	if d.header == nil {
 		d.fh.Seek(0, io.SeekStart)
 		d.header = &domain.DataFileHeader{}
@@ -52,11 +52,11 @@ func (d *DataFileReader) GetHeader() (*domain.DataFileHeader, error) {
 	return d.header, nil
 }
 
-func (d *DataFileReader) Close() error {
+func (d *Reader) Close() error {
 	return d.fh.Close()
 }
 
-func (d *DataFileReader) Query(filterSet ports.FilterSet) (*domain.QueryResult, error) {
+func (d *Reader) Query(filterSet ports.FilterSet) (*domain.QueryResult, error) {
 	tStar := time.Now()
 	_, err := d.fh.Seek(domain.DataFileHeaderSize, io.SeekStart)
 	if err != nil {
@@ -80,7 +80,7 @@ func (d *DataFileReader) Query(filterSet ports.FilterSet) (*domain.QueryResult, 
 }
 
 // query reads data from the file
-func (d *DataFileReader) query(filterSet ports.FilterSet) (*domain.QueryResult, error) {
+func (d *Reader) query(filterSet ports.FilterSet) (*domain.QueryResult, error) {
 	var result domain.QueryResult = domain.QueryResult{}
 	for {
 		if err := d.readNextDataPage(); err != nil {
@@ -105,7 +105,7 @@ func (d *DataFileReader) query(filterSet ports.FilterSet) (*domain.QueryResult, 
 }
 
 // readNextDataPage reads next data page from file
-func (d *DataFileReader) readNextDataPage() error {
+func (d *Reader) readNextDataPage() error {
 	// read data page header
 	// read data page
 	if d.currentDataPage != nil {
@@ -122,7 +122,7 @@ func (d *DataFileReader) readNextDataPage() error {
 }
 
 // readRecords reads records from the current data page
-func (d *DataFileReader) readRecords(result domain.QueryResult, filterSet ports.FilterSet) error {
+func (d *Reader) readRecords(result domain.QueryResult, filterSet ports.FilterSet) error {
 	for {
 		// TODO: use limit from filterSet
 		//if len(result.Records) >= limit {

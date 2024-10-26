@@ -1,4 +1,4 @@
-package repository
+package datafile
 
 import (
 	"LogDb/internal/domain"
@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-type DataFileWriter struct {
+type Writer struct {
 	codec  ports.Serializer
 	fh     *os.File
 	header *domain.DataFileHeader
@@ -22,13 +22,13 @@ type DataFileWriter struct {
 	currentDataPage *domain.DataPageHeader
 	dataPageWriter  bytes.Buffer
 
-	mu     sync.Mutex
+	mu     sync.Mutex // Mutex to prevent simultaneous writes or seeks
 	offset int64
 }
 
 // NewDataFileWriter creates a new DataFileWriter
-func NewDataFileWriter(codec ports.Serializer, ts time.Time) *DataFileWriter {
-	return &DataFileWriter{
+func NewDataFileWriter(codec ports.Serializer, ts time.Time) *Writer {
+	return &Writer{
 		codec: codec,
 		header: &domain.DataFileHeader{
 			Version:     1,
@@ -43,39 +43,49 @@ func NewDataFileWriter(codec ports.Serializer, ts time.Time) *DataFileWriter {
 }
 
 // writeHeader writes the file header to the file
-func (d *DataFileWriter) writeHeader() error {
+func (d *Writer) writeHeader() error {
 	if d.header == nil {
 		return errors.New("header is not set")
 	}
-	d.fh.Seek(0, io.SeekStart)
+	// Seek to the start of the file
+	if _, err := d.fh.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	n, err := d.codec.WriteFileHeader(d.header, d.fh)
 	if err != nil {
 		return err
 	}
 	d.offset = int64(n)
-	d.fh.Seek(d.offset, io.SeekStart)
+	// Seek to the new offset
+	if _, err := d.fh.Seek(d.offset, io.SeekStart); err != nil {
+		return err
+	}
 	return nil
 }
 
 // saveDataPage saves the current data page to the file
-func (d *DataFileWriter) saveDataPage() error {
+func (d *Writer) saveDataPage() error {
 	if d.currentDataPage == nil {
 		return errors.New("no data page to save")
 	}
 	d.currentDataPage.PageSize = uint64(d.dataPageWriter.Len())
-	d.codec.WriteDataPageHeader(d.currentDataPage, d.fh)
-	// wrote writer to file
+	// Write the page header
+	if _, err := d.codec.WriteDataPageHeader(d.currentDataPage, d.fh); err != nil {
+		return err
+	}
+	// Write the data page content
 	n, err := d.fh.Write(d.dataPageWriter.Bytes())
 	if err != nil {
 		return err
 	}
 	d.offset += int64(n) + int64(domain.DataPageHeaderSize)
 	d.dataPageWriter.Reset()
+	d.fh.Seek(d.offset, io.SeekStart)
 	return nil
 }
 
 // newDataPage creates a new data page
-func (d *DataFileWriter) newDataPage(i uint32) error {
+func (d *Writer) newDataPage(i uint32) error {
 	if d.currentDataPage != nil {
 		if d.currentDataPage.Number >= i {
 			return errors.New("invalid page number")
@@ -93,43 +103,70 @@ func (d *DataFileWriter) newDataPage(i uint32) error {
 }
 
 // Open opens the file for writing
-func (d *DataFileWriter) Open() error {
-	file, err := os.OpenFile(fmt.Sprintf("%d-%d-%d.%d.chunk", d.header.Year, d.header.Month, d.header.Day, d.header.Id), os.O_RDWR|os.O_CREATE, 0600)
-	if err == nil {
-		d.fh = file
+func (d *Writer) Open() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	fileName := fmt.Sprintf("%d-%d-%d.%d.chunk", d.header.Year, d.header.Month, d.header.Day, d.header.Id)
+	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return err
 	}
-	return err
+	d.fh = file
+	// Write the initial file header
+	if err := d.writeHeader(); err != nil {
+		d.fh.Close()
+		return err
+	}
+	return nil
 }
 
 // Close closes the file
-func (d *DataFileWriter) Close() error {
+func (d *Writer) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.currentDataPage != nil {
 		if err := d.saveDataPage(); err != nil {
 			return err
 		}
 	}
-	return d.fh.Close()
+	// Update the file header with the final record count
+	if err := d.writeHeader(); err != nil {
+		return err
+	}
+
+	if err := d.fh.Sync(); err != nil {
+		return err
+	}
+
+	if err := d.fh.Close(); err != nil {
+		return err
+	}
+	d.fh = nil
+	return nil
 }
 
 // AppendLogRecord appends a log record to the current data page
-func (d *DataFileWriter) AppendLogRecord(record domain.LogRecord) error {
+func (d *Writer) AppendLogRecord(record domain.LogRecord) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.currentDataPage == nil {
 		if err := d.newDataPage(0); err != nil {
 			return err
 		}
 	}
-	// TODO: Normalize logs so that end of minute does not have logs from new minute
 
-	if record.Timestamp.Day() != int(d.header.Day) {
-		return errors.New("day mismatch")
+	// Check if the record's date matches the data file header
+	if record.Timestamp.Day() != int(d.header.Day) ||
+		record.Timestamp.Month() != time.Month(d.header.Month) ||
+		record.Timestamp.Year() != int(d.header.Year) {
+		return errors.New("timestamp of record does not match data file date")
 	}
-	if record.Timestamp.Month() != time.Month(d.header.Month) {
-		return errors.New("month mismatch")
-	}
-	if record.Timestamp.Year() != int(d.header.Year) {
-		return errors.New("year mismatch")
-	}
-	logRecordMin := uint32(record.Timestamp.Minute())
+
+	// Determine the minute number for the record (minutes since midnight)
+	logRecordMin := uint32(record.Timestamp.Hour()*60 + record.Timestamp.Minute())
 	if logRecordMin != d.currentDataPage.Number {
 		if logRecordMin < d.currentDataPage.Number {
 			return errors.New("minute mismatch - log record is from the past")
@@ -137,16 +174,11 @@ func (d *DataFileWriter) AppendLogRecord(record domain.LogRecord) error {
 		if err := d.newDataPage(logRecordMin); err != nil {
 			return err
 		}
-		d.currentDataPage.Number = logRecordMin
 	}
 
 	// Calculate sizes upfront
 	var labelsSize uint64
 	for _, label := range record.Labels {
-		// Each label consists of:
-		// - Type (1 byte)
-		// - Value length (8 bytes)
-		// - Value (variable length)
 		labelsSize += 1 + 8 + uint64(len(label.Value))
 	}
 	labelsCount := uint64(len(record.Labels))
@@ -171,7 +203,7 @@ func (d *DataFileWriter) AppendLogRecord(record domain.LogRecord) error {
 	binary.LittleEndian.PutUint64(buf[offset:], timestamp)
 	offset += 8
 
-	// Write schema version (assuming you have this field)
+	// Write schema version
 	binary.LittleEndian.PutUint64(buf[offset:], record.SchemaVersion)
 	offset += 8
 
@@ -220,7 +252,9 @@ func (d *DataFileWriter) AppendLogRecord(record domain.LogRecord) error {
 		return fmt.Errorf("incomplete write: wrote %d bytes, expected %d", n, len(buf))
 	}
 
-	// Update the record count
+	// Update the record counts
 	d.currentDataPage.RecordCount++
+	d.header.RecordCount++
+
 	return nil
 }
