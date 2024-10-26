@@ -188,36 +188,39 @@ func (p *PersistentStorage) CreateDataFile(name string, id uint32, y, m, d uint6
 }
 
 func (p *PersistentStorage) GetDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error) {
-	var dph domain.DataPageHeader
-	for {
-		// Read the data page header
-		_, err := p.codec.ReadDataPageHeader(&dph, df.File)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, fmt.Errorf("failed to read data page header: %w", err)
-		}
-		if dph.Number < pageNumber {
-			// Skip the data page
-			_, err = df.File.Seek(int64(dph.PageSize)-int64(domain.RecordMetaSize), io.SeekCurrent)
-			if err != nil {
-				return nil, fmt.Errorf("failed to seek data page: %w", err)
-			}
-			continue
-		}
-		if dph.Number == pageNumber {
-
-			return &domain.DataPage{
-				Header:          &dph,
-				ReadWriteSeeker: df.File,
-			}, nil
-		}
+	if df.Header.FirstDataPageNumber > pageNumber {
+		return nil, fmt.Errorf("data page not found: %d", pageNumber)
 	}
-	if dph.Number < pageNumber {
+
+	if df.Header.LastDataPageNumber < pageNumber {
+		df.Seek(0, io.SeekEnd)
 		return p.CreateDataPage(df, pageNumber)
 	}
-	return nil, fmt.Errorf("data page not found: %d", pageNumber)
+
+	for {
+		// Next data page
+		dp, err := p.NextDataPage(df)
+		if err != nil {
+			return nil, err
+		}
+		if dp.Header.Number == pageNumber {
+			return dp, nil
+		}
+		if dp.Header.Number > pageNumber {
+			return nil, io.EOF
+		}
+		p.SkipDataPage(dp)
+	}
+}
+
+// SkipDataPage skips current data page data
+func (p *PersistentStorage) SkipDataPage(dp *domain.DataPage) (*domain.DataPage, error) {
+	// Skip the data page
+	_, err := dp.Seek(int64(dp.Header.PageSize), io.SeekCurrent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to skip data page: %w", err)
+	}
+	return dp, nil
 }
 
 // NextDataPage returns the next data page in the data file
@@ -344,9 +347,6 @@ func (p *PersistentStorage) StoreLogRecord(record *domain.LogRecord) error {
 		var dp *domain.DataPage
 		if created {
 			dp, err = p.CreateDataPage(df, record.DataPageNumber())
-			if err != nil {
-				return fmt.Errorf("failed to create data page: %w", err)
-			}
 		} else {
 			dp, err = p.GetDataPage(record.DataPageNumber(), df)
 		}

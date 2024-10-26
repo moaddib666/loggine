@@ -41,7 +41,25 @@ func main() {
 	idx := index.NewTimestamp(BaseDir, codec)
 	stor := datastor.NewPersistentStorage(BaseDir, codec, idx)
 	defer stor.Close()
+	writeTimeLimitRecords(5*time.Minute, 1*time.Second, 10_000, stor)
+}
+
+func writeLimitRecords(n int, storage *datastor.PersistentStorage) {
 	loader.LoadApacheLogsFromFile(ApacheLogsFile, func(record *domain.LogRecord) error {
-		return stor.StoreLogRecord(record)
-	}, 5)
+		return storage.StoreLogRecord(record)
+	}, n)
+}
+
+func writeTimeLimitRecords(timeWindow, interval time.Duration, chunkSize int, storage *datastor.PersistentStorage) {
+	stopAt := time.Now().Add(timeWindow)
+	for {
+		if time.Now().After(stopAt) {
+			break
+		}
+		loader.LoadApacheLogsFromFile(ApacheLogsFile, func(record *domain.LogRecord) error {
+			return storage.StoreLogRecord(record)
+		}, chunkSize)
+		time.Sleep(interval)
+
+	}
 }
