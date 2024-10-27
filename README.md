@@ -1,13 +1,19 @@
 # Log
 
+## FIXME:
+
+- Right now client is find only trough only first match data-page despite the facto that range is bigger and include
+  more data-pages
+-
+
 ## TODO:
 
 - Introduce Context and gracefully shutdown application with dump of all data to disk.
 - Todo Migrate to Logrus
 - Todo implement .chunk merge
-    - Once a timeframe we need to merge all chunks of a day into a single file
+  - Once a timeframe we need to merge all chunks of a day into a single file
 - Todo chunk size limit
-    - Once a chunk reaches a certain size we need to create a new chunk apliying to merge as well
+  - Once a chunk reaches a certain size we need to create a new chunk apliying to merge as well
 
 ## Essential:
 
