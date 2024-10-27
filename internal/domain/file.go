@@ -24,7 +24,8 @@ type DataFileHeader struct {
 	FirstDataPageNumber uint32    // 4 bytes
 	Reserved            [252]byte // 256 bytes reserved for future use
 	Checksum            uint64    // 8 bytes
-} // 312 bytes
+}
+
 const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
 	unsafe.Sizeof(DataFileHeader{}.Id) +
 	unsafe.Sizeof(DataFileHeader{}.RecordCount) +
@@ -34,7 +35,8 @@ const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
 	unsafe.Sizeof(DataFileHeader{}.LastDataPageNumber) +
 	unsafe.Sizeof(DataFileHeader{}.FirstDataPageNumber) +
 	unsafe.Sizeof(DataFileHeader{}.Reserved) +
-	unsafe.Sizeof(DataFileHeader{}.Checksum))
+	unsafe.Sizeof(DataFileHeader{}.Checksum),
+) // 312 bytes
 
 const MaxDataPagesInDataFile = 1440
 

@@ -40,22 +40,22 @@ func (g *GzipCompression) Decompress(data []byte) ([]byte, error) {
 }
 
 // CompressStream compresses the data from the reader and writes it to the writer
-func (g *GzipCompression) CompressStream(reader io.Reader, writer io.Writer) error {
+func (g *GzipCompression) CompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	gz := gzip.NewWriter(writer)
 	defer gz.Close()
 
-	_, err := io.Copy(gz, reader) // Stream compression
-	return err
+	written, err := io.Copy(gz, reader) // Stream compression
+	return written, err
 }
 
 // DecompressStream decompresses the data from the reader and writes it to the writer
-func (g *GzipCompression) DecompressStream(reader io.Reader, writer io.Writer) error {
+func (g *GzipCompression) DecompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	gz, err := gzip.NewReader(reader)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer gz.Close()
 
-	_, err = io.Copy(writer, gz) // Stream decompression
-	return err
+	written, err := io.Copy(writer, gz) // Stream decompression
+	return written, err
 }

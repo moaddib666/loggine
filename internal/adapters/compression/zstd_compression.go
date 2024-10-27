@@ -11,21 +11,14 @@ type ZstdCompression struct {
 	decoder *zstd.Decoder
 }
 
-func NewZstdCompression() (*ZstdCompression, error) {
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return nil, err
-	}
+func NewZstdCompression() *ZstdCompression {
+	encoder, _ := zstd.NewWriter(nil)
+	decoder, _ := zstd.NewReader(nil)
 
 	return &ZstdCompression{
 		encoder: encoder,
 		decoder: decoder,
-	}, nil
+	}
 }
 
 func (z *ZstdCompression) Compress(data []byte) ([]byte, error) {
@@ -37,26 +30,22 @@ func (z *ZstdCompression) Decompress(data []byte) ([]byte, error) {
 }
 
 // CompressStream compresses the data from the reader and writes it to the writer
-func (z *ZstdCompression) CompressStream(reader io.Reader, writer io.Writer) error {
+func (z *ZstdCompression) CompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	zstdWriter, err := zstd.NewWriter(writer)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer zstdWriter.Close()
 
-	_, err = io.Copy(zstdWriter, reader) // Stream compression
-	return err
+	return io.Copy(zstdWriter, reader) // Stream compression
 }
 
 // DecompressStream decompresses the data from the reader and writes it to the writer
-func (z *ZstdCompression) DecompressStream(reader io.Reader, writer io.Writer) error {
+func (z *ZstdCompression) DecompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	zstdReader, err := zstd.NewReader(reader)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer zstdReader.Close()
-
-	_, err = io.Copy(writer, zstdReader) // Stream decompression
-
-	return err
+	return io.Copy(writer, zstdReader)
 }

@@ -17,18 +17,14 @@ func (s *SnappyCompression) Decompress(data []byte) ([]byte, error) {
 }
 
 // CompressStream compresses the data from the reader and writes it to the writer
-func (s *SnappyCompression) CompressStream(reader io.Reader, writer io.Writer) error {
+func (s *SnappyCompression) CompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	snappyWriter := snappy.NewBufferedWriter(writer)
 	defer snappyWriter.Close()
-
-	_, err := io.Copy(snappyWriter, reader) // Stream compression
-	return err
+	return io.Copy(snappyWriter, reader) // Stream compression
 }
 
 // DecompressStream decompresses the data from the reader and writes it to the writer
-func (s *SnappyCompression) DecompressStream(reader io.Reader, writer io.Writer) error {
+func (s *SnappyCompression) DecompressStream(reader io.Reader, writer io.Writer) (int64, error) {
 	snappyReader := snappy.NewReader(reader)
-
-	_, err := io.Copy(writer, snappyReader) // Stream decompression
-	return err
+	return io.Copy(writer, snappyReader) // Stream decompression
 }

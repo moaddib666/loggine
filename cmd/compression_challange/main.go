@@ -1,6 +1,7 @@
 package main
 
 import (
+	"LogDb/internal/domain/compression_types"
 	"flag"
 	"fmt"
 	"io"
@@ -13,7 +14,7 @@ import (
 	"LogDb/internal/ports"
 )
 
-var compressors = []compression.Type{compression.Gzip, compression.Lz4, compression.Snappy, compression.Zstd}
+var compressors = []compression_types.CompressionType{compression_types.Gzip, compression_types.Lz4, compression_types.Snappy, compression_types.Zstd}
 
 const compressedDir = "./compressed_files"
 const decompressedDir = "./decompressed_files"
@@ -40,7 +41,7 @@ func main() {
 
 	// Iterate over available compressors and compress the file
 	for _, c := range compressors {
-		compressor, err := compression.Factory(c)
+		compressor := compression.Factory(c)
 		if err != nil {
 			log.Fatalf("Failed to create compressor for type %v: %v", c, err)
 		}
@@ -54,7 +55,7 @@ func main() {
 }
 
 // compressFile compresses the file content and writes the compressed data to a new file
-func compressFile(inputFile *os.File, inputFilePath string, compressor ports.Compression, cType compression.Type) {
+func compressFile(inputFile *os.File, inputFilePath string, compressor ports.Compression, cType compression_types.CompressionType) {
 	start := time.Now()
 
 	// Reset file pointer to the beginning of the file
@@ -73,7 +74,7 @@ func compressFile(inputFile *os.File, inputFilePath string, compressor ports.Com
 	defer compressedFile.Close()
 
 	// Compress the file using CompressStream
-	err = compressor.CompressStream(inputFile, compressedFile)
+	_, err = compressor.CompressStream(inputFile, compressedFile)
 	if err != nil {
 		log.Fatalf("Failed to compress file: %v", err)
 	}
@@ -105,7 +106,7 @@ func compressFile(inputFile *os.File, inputFilePath string, compressor ports.Com
 }
 
 // decompressFile decompresses the compressed file and verifies its integrity with the original content
-func decompressFile(inputFile *os.File, inputFilePath string, compressor ports.Compression, cType compression.Type) {
+func decompressFile(inputFile *os.File, inputFilePath string, compressor ports.Compression, cType compression_types.CompressionType) {
 	// Reset the input file pointer again to ensure file consistency
 	_, err := inputFile.Seek(0, io.SeekStart)
 	if err != nil {
@@ -131,7 +132,7 @@ func decompressFile(inputFile *os.File, inputFilePath string, compressor ports.C
 	defer decompressedFile.Close()
 
 	// Decompress the file using DecompressStream
-	err = compressor.DecompressStream(compressedFile, decompressedFile)
+	_, err = compressor.DecompressStream(compressedFile, decompressedFile)
 	if err != nil {
 		log.Fatalf("Failed to decompress file: %v", err)
 	}
@@ -147,15 +148,15 @@ func createDirectoryIfNotExist(dir string) {
 }
 
 // getFileExtension returns the appropriate file extension for each compression type
-func getFileExtension(cType compression.Type) string {
+func getFileExtension(cType compression_types.CompressionType) string {
 	switch cType {
-	case compression.Gzip:
+	case compression_types.Gzip:
 		return ".gz"
-	case compression.Lz4:
+	case compression_types.Lz4:
 		return ".lz4"
-	case compression.Snappy:
+	case compression_types.Snappy:
 		return ".snappy"
-	case compression.Zstd:
+	case compression_types.Zstd:
 		return ".zstd"
 	default:
 		return ".bin"

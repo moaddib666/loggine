@@ -1,8 +1,10 @@
 package main
 
 import (
+	"LogDb/internal/adapters/compression"
 	"LogDb/internal/adapters/serializer"
 	"LogDb/internal/domain"
+	"LogDb/internal/domain/compression_types"
 	"LogDb/internal/ports"
 	"bytes"
 	"encoding/binary"
@@ -19,7 +21,9 @@ const pagesCount = 10
 
 func main() {
 
-	codec := &serializer.BinarySerializer{}
+	codec := serializer.Default
+	compressionType := compression_types.Zstd
+	_ = os.Remove(fileName)
 	fh, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		panic(err)
@@ -32,7 +36,7 @@ func main() {
 		panic(err)
 	}
 	for i := 0; i < pagesCount; i++ {
-		err = writeDataPage(uint32(i), recordInPage, codec, fh)
+		err = writeDataPage(uint32(i), recordInPage, codec, fh, compressionType)
 		if err != nil {
 			panic(err)
 		}
@@ -67,7 +71,7 @@ func writeDataFileHeader(recordsCount uint64, codec ports.Serializer, writer *os
 }
 
 // writeDataPage
-func writeDataPage(number uint32, recordsCount uint64, codec ports.Serializer, writer *os.File) error {
+func writeDataPage(number uint32, recordsCount uint64, codec ports.Serializer, writer *os.File, compressionType compression_types.CompressionType) error {
 	buf := &bytes.Buffer{}
 	ts := time.Now()
 	var pageSize uint64
@@ -99,17 +103,28 @@ func writeDataPage(number uint32, recordsCount uint64, codec ports.Serializer, w
 		pageSize += uint64(n)
 	}
 	header := &domain.DataPageHeader{
-		Number:      number,
-		PageSize:    pageSize,
-		RecordCount: recordsCount,
+		Number:               number,
+		PageSize:             pageSize,
+		RecordCount:          recordsCount,
+		CompressionAlgorithm: compressionType,
 	}
-	_, err := codec.WriteDataPageHeader(header, writer)
+	compressor := compression.Factory(compressionType)
+	compressedRecordsBuf := &bytes.Buffer{}
+
+	_, err := compressor.CompressStream(buf, compressedRecordsBuf)
 	if err != nil {
 		return err
 	}
-	err = binary.Write(writer, binary.LittleEndian, buf.Bytes())
+	header.CompressedPageSize = uint64(compressedRecordsBuf.Len())
+	// Seek to the start of the page
+	_, err = codec.WriteDataPageHeader(header, writer)
 	if err != nil {
 		return err
 	}
+	err = binary.Write(writer, binary.LittleEndian, compressedRecordsBuf.Bytes())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Page %d written with %d records\n", number, recordsCount)
 	return nil
 }

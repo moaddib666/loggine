@@ -1,7 +1,9 @@
 package inspector
 
 import (
+	"LogDb/internal/adapters/compression"
 	"LogDb/internal/domain"
+	"LogDb/internal/domain/compression_types"
 	"LogDb/internal/ports"
 	"bytes"
 	"encoding/hex"
@@ -88,10 +90,10 @@ func (f *FileConsistencyInspector) Report() (*InspectionReport, error) {
 
 	// Use tabwriter for aligned output of data pages
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "Page Number\tPage Size\tRecord Count\t")
+	fmt.Fprintln(writer, "Page Number\tPage Size\tRecord Count\tCompression Type\tCompressed Page Size")
 
 	for _, page := range f.report.DataPages {
-		fmt.Fprintf(writer, "%d\t%d\t%d\t\n", page.Number, page.PageSize, page.RecordCount)
+		fmt.Fprintf(writer, "%d\t%d\t%d\t%s\t%d\t\n", page.Number, page.PageSize, page.RecordCount, compression_types.CompressionType(page.CompressionAlgorithm), page.CompressedPageSize)
 	}
 
 	// Flush the tabwriter buffer to output the table
@@ -193,7 +195,22 @@ func (f *FileConsistencyInspector) InspectDataPage() error {
 	fmt.Println("--------- Validating Data Page Records ---------")
 
 	// Validate the records and ensure the sizes match the expected page size
-	err = f.InspectRecords(hd.PageSize, hd.RecordCount)
+	var decompressor ports.Compression
+	var recordsReader io.Reader
+	if hd.CompressionAlgorithm != compression_types.None {
+		decompressor = compression.Factory(hd.CompressionAlgorithm)
+		decompressedDataBuffer := bytes.NewBuffer(make([]byte, 0, hd.PageSize))
+		compressedReader := io.LimitReader(f.fh, int64(hd.CompressedPageSize))
+
+		_, err := decompressor.DecompressStream(compressedReader, decompressedDataBuffer)
+		if err != nil {
+			return err
+		}
+		recordsReader = bytes.NewReader(decompressedDataBuffer.Bytes())
+	} else {
+		recordsReader = io.LimitReader(f.fh, int64(hd.PageSize))
+	}
+	err = f.InspectRecords(hd.PageSize, hd.RecordCount, recordsReader)
 	if err != nil {
 		return err
 	}
@@ -212,6 +229,9 @@ func (f *FileConsistencyInspector) ReportDataPage() error {
 
 	// Seek past the records to the next data page
 	offset := int64(hd.PageSize)
+	if hd.CompressionAlgorithm != compression_types.None {
+		offset = int64(hd.CompressedPageSize)
+	}
 	_, err = f.fh.Seek(offset, io.SeekCurrent)
 	if err != nil {
 		return err
@@ -241,11 +261,11 @@ func (f *FileConsistencyInspector) InspectDataPageHeader(silent bool) (*domain.D
 }
 
 // InspectRecords validates the records in a data page to ensure they match the page size
-func (f *FileConsistencyInspector) InspectRecords(pageSize, recordsCount uint64) error {
+func (f *FileConsistencyInspector) InspectRecords(pageSize, recordsCount uint64, reader io.Reader) error {
 	var offset int64
 	for i := uint64(0); i < recordsCount; i++ {
 		fmt.Printf("\n-- Record %d --\n", i+1)
-		n, err := f.InspectRecord()
+		n, err := f.InspectRecord(reader)
 		if err != nil {
 			return err
 		}
@@ -258,10 +278,10 @@ func (f *FileConsistencyInspector) InspectRecords(pageSize, recordsCount uint64)
 }
 
 // InspectRecord validates a single record's consistency
-func (f *FileConsistencyInspector) InspectRecord() (int64, error) {
+func (f *FileConsistencyInspector) InspectRecord(reader io.Reader) (int64, error) {
 	recordHeaderBytes := make([]byte, domain.RecordMetaSize)
 	recordMeta := &domain.RecordMeta{}
-	_, err := f.fh.Read(recordHeaderBytes)
+	_, err := reader.Read(recordHeaderBytes)
 	if err != nil {
 		return 0, err
 	}
@@ -273,7 +293,7 @@ func (f *FileConsistencyInspector) InspectRecord() (int64, error) {
 
 	// Read and validate labels
 	labelBytes := make([]byte, recordMeta.LabelsSize)
-	_, err = f.fh.Read(labelBytes)
+	_, err = reader.Read(labelBytes)
 	if err != nil {
 		return 0, err
 	}
@@ -281,7 +301,7 @@ func (f *FileConsistencyInspector) InspectRecord() (int64, error) {
 
 	// Read and validate message
 	messageBytes := make([]byte, recordMeta.MessageSize)
-	_, err = f.fh.Read(messageBytes)
+	_, err = reader.Read(messageBytes)
 	if err != nil {
 		return 0, err
 	}
