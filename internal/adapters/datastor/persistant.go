@@ -35,12 +35,13 @@ func (s *StorageWriteCursor) SetDataPage(dp *domain.DataPage) {
 }
 
 type PersistentStorage struct {
-	primaryIndex ports.Index
-	indexes      []ports.Index
-	baseDir      string
-	codec        ports.Serializer
-	writeCursor  *StorageWriteCursor
-	fileExt      string
+	primaryIndex           ports.Index
+	indexes                []ports.Index
+	baseDir                string
+	codec                  ports.Serializer
+	writeCursor            *StorageWriteCursor
+	fileExt                string
+	dataFileManagerFactory ports.DataFileManagerFactory
 }
 
 // NewPersistentStorage creates a new persistent storage
@@ -59,7 +60,8 @@ func NewPersistentStorage(baseDir string, codec ports.Serializer, primaryIndex p
 			DataPage: nil,
 			Mutex:    sync.Mutex{},
 		},
-		fileExt: defaultFileExt,
+		dataFileManagerFactory: NewDataFileManagerFactory(codec),
+		fileExt:                defaultFileExt,
 	}
 	stor.initIndexes()
 	return stor
@@ -420,64 +422,70 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 		query.SetError(fmt.Errorf("failed to query primary index: %w", err))
 		return query.Result()
 	}
+
 	// Iterate over the data files
 	for _, df := range dataFiles {
-		// Get the data page for the query
-		// TODO: detect page number for 1 and last file to not filter through all records from start
+		// TODO: optimize the read Need to find first minute and last minute for each file and unde
+		//firstMinute := df.Header.Time().Add(time.Minute * time.Duration(df.Header.FirstDataPageNumber)).Unix()
+		//lastMinute := df.Header.Time().Add(time.Minute * time.Duration(df.Header.LastDataPageNumber)).Unix()
 
-		dp, err := p.NextDataPage(df)
-		if err != nil {
-			log.Printf("failed to get data page: %v", err)
-			break
-		}
-		// TODO: Filter by pages if page not in before after we could not prcess it just skip
-		// Read through the data page
-		for i := 0; i < int(dp.Header.RecordCount); i++ {
-			recordMetadata := &domain.RecordMeta{}
-			offset, err := p.codec.ReadLogRecordMeta(recordMetadata, dp)
+		dataFileManager := p.dataFileManagerFactory.FromDataFile(df)
+		for {
+			dp, err := dataFileManager.NextDataPage()
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				query.SetError(fmt.Errorf("failed to read log record: %w", err))
-				return query.Result()
+				log.Printf("failed to get data page: %v", err)
+				break
 			}
-			// Check if the record is in the query range
-			if recordMetadata.Timestamp < query.FromDateTime() || recordMetadata.Timestamp > query.ToDateTime() {
-				query.Skip()
-				_, err := dp.Seek(int64(recordMetadata.RecordSize)-int64(offset), io.SeekCurrent)
+			// TODO: Add to some abstraction
+			// TODO: Filter by pages if page not in before after we could not prcess it just skip
+			// Read through the data page
+			for i := 0; i < int(dp.Header.RecordCount); i++ {
+				recordMetadata := &domain.RecordMeta{}
+				offset, err := p.codec.ReadLogRecordMeta(recordMetadata, dp)
 				if err != nil {
-					query.SetError(fmt.Errorf("failed to skip log record: %w", err))
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					query.SetError(fmt.Errorf("failed to read log record: %w", err))
 					return query.Result()
 				}
-				continue
-			}
+				// Check if the record is in the query range
+				if recordMetadata.Timestamp < query.FromDateTime() || recordMetadata.Timestamp > query.ToDateTime() {
+					query.Skip()
+					_, err := dp.Seek(int64(recordMetadata.RecordSize)-int64(offset), io.SeekCurrent)
+					if err != nil {
+						query.SetError(fmt.Errorf("failed to skip log record: %w", err))
+						return query.Result()
+					}
+					continue
+				}
 
-			logRecord := domain.LogRecord{
-				SchemaVersion: 0,
-				Labels:        make([]domain.Label, recordMetadata.LabelsCount, recordMetadata.LabelsCount),
-				Message:       make([]byte, recordMetadata.MessageSize, recordMetadata.MessageSize),
-				Timestamp:     time.Unix(int64(recordMetadata.Timestamp), 0),
-			}
-			// Read Labels
-			for i := 0; i < int(recordMetadata.LabelsCount); i++ {
-				_, err = p.codec.ReadLogLabel(&logRecord.Labels[i], dp)
+				logRecord := domain.LogRecord{
+					SchemaVersion: 0,
+					Labels:        make([]domain.Label, recordMetadata.LabelsCount, recordMetadata.LabelsCount),
+					Message:       make([]byte, recordMetadata.MessageSize, recordMetadata.MessageSize),
+					Timestamp:     time.Unix(int64(recordMetadata.Timestamp), 0),
+				}
+				// Read Labels
+				for i := 0; i < int(recordMetadata.LabelsCount); i++ {
+					_, err = p.codec.ReadLogLabel(&logRecord.Labels[i], dp)
+					if err != nil {
+						query.SetError(fmt.Errorf("failed to read label: %w", err))
+						return query.Result()
+					}
+				}
+
+				// Read Message
+				_, err = dp.Read(logRecord.Message)
 				if err != nil {
-					query.SetError(fmt.Errorf("failed to read label: %w", err))
+					query.SetError(fmt.Errorf("failed to read message: %w", err))
 					return query.Result()
 				}
+				// TODO: right now we fully load log record to memory before filtering
+				// 	This could be optimized by filtering on the fly
+				//  This require fast-filtering implementation
+				query.Next(&logRecord)
 			}
-
-			// Read Message
-			_, err = dp.Read(logRecord.Message)
-			if err != nil {
-				query.SetError(fmt.Errorf("failed to read message: %w", err))
-				return query.Result()
-			}
-			// TODO: right now we fully load log record to memory before filtering
-			// 	This could be optimized by filtering on the fly
-			//  This require fast-filtering implementation
-			query.Next(&logRecord)
 		}
 		_ = df.Close()
 	}

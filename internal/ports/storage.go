@@ -4,39 +4,39 @@ import (
 	"LogDb/internal/domain"
 )
 
-type DataFileRepository interface {
-	Open(fileName string) error
-	GetHeader() (*domain.DataFileHeader, error)
-	Close() error
-}
+//type DataFileRepository interface {
+//	Open(fileName string) error
+//	GetHeader() (*domain.DataFileHeader, error)
+//	Close() error
+//}
 
-type DataPageRepositoryWriter interface {
-	WriteLogRecord(record domain.LogRecord) error
-}
+//type DataPageRepositoryWriter interface {
+//	WriteLogRecord(record domain.LogRecord) error
+//}
 
-type DataPageRepositoryReader interface {
-	Query(filterSet FilterSet) (*domain.QueryResult, error)
-}
+//type DataPageRepositoryReader interface {
+//	Query(filterSet FilterSet) (*domain.QueryResult, error)
+//}
 
-type DataPageManager interface {
-	AddLogRecord(record domain.LogRecord) error
-	GetReader() Scanner
-}
+//type DataPageManager interface {
+//	AddLogRecord(record domain.LogRecord) error
+//	GetReader() Scanner
+//}
 
-type Writer interface {
-	WriteLogRecord(record domain.LogRecord) (int, error)
-	Close() error
-}
+//type Writer interface {
+//	WriteLogRecord(record domain.LogRecord) (int, error)
+//	Close() error
+//}
 
-type Scanner interface {
-	ScanLogRecord(filters FilterSet) (domain.LogRecord, int, error)
-	ScannedRecordsCount() int
-	Close() error
-}
+//type Scanner interface {
+//	ScanLogRecord(filters FilterSet) (domain.LogRecord, int, error)
+//	ScannedRecordsCount() int
+//	Close() error
+//}
 
-type ReaderFactory interface {
-	NewReader() Scanner
-}
+//type ReaderFactory interface {
+//	NewReader() Scanner
+//}
 
 type LogTransformer interface {
 	ToString(record *domain.LogRecord) string
@@ -50,8 +50,8 @@ type DataStorage interface {
 	GetDataFile(name string) (*domain.DataFile, error)
 	CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
 
-	GetDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
-	CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
+	//GetDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
+	//CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
 
 	StoreLogRecord(record *domain.LogRecord) error
 	Query(query PreparedQuery) (*domain.QueryResult, error)
@@ -59,4 +59,35 @@ type DataStorage interface {
 	GetFileExt() string
 
 	Close() error
+}
+
+// DataFileManager defines the operations for managing data files and pages.
+type DataFileManager interface {
+
+	// GetHeader retrieves and returns the data file header from the data source, caching it in memory
+	GetHeader() (*domain.DataFileHeader, error)
+
+	// GetDataPage retrieves a specific data page by its page number
+	GetDataPage(pageNumber uint32) (*domain.DataPage, error)
+
+	// CreateDataPage creates a new data page with the given page number
+	CreateDataPage(pageNumber uint32) (*domain.DataPage, error)
+
+	// FirstDataPage returns the first data page in the data file
+	FirstDataPage() (*domain.DataPage, error)
+
+	// GetCurrentDataPage returns the currently loaded data page
+	GetCurrentDataPage() (*domain.DataPage, error)
+
+	// NextDataPage moves to and returns the next data page in the data file
+	NextDataPage() (*domain.DataPage, error)
+
+	// Close closes the data file manager
+	Close() error
+}
+
+// DataFileManagerFactory defines the operations for creating data file managers
+type DataFileManagerFactory interface {
+	NewDataFileManager(fileName string) (DataFileManager, error)
+	FromDataFile(df *domain.DataFile) DataFileManager
 }
