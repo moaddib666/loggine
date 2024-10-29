@@ -54,7 +54,7 @@ type DataStorage interface {
 	CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
 
 	StoreLogRecord(record *domain.LogRecord) error
-	Query(query *domain.Query) (*domain.QueryResult, error)
+	Query(query PreparedQuery) (*domain.QueryResult, error)
 
 	GetFileExt() string
 

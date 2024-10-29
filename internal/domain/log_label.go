@@ -1,6 +1,6 @@
 package domain
 
-// StringLabelType, IntLabelType, FloatLabelType are constants that represent the type of the label value
+// StringLabelType IntLabelType FloatLabelType are constants that represent the type of the label value
 const StringLabelType uint8 = 0
 const IntLabelType uint8 = 1
 const FloatLabelType uint8 = 2

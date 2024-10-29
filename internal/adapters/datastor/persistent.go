@@ -411,13 +411,14 @@ func (p *PersistentStorage) StoreLogRecord(record *domain.LogRecord) error {
 }
 
 // Query queries the log records in the persistent storage
-func (p *PersistentStorage) Query(q *domain.Query) (*domain.QueryResult, error) {
-	result := domain.NewQueryResult(q)
-	defer result.SpentTime(time.Since(time.Now()))
+func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResult, error) {
 	// Query the primary index
-	dataFiles, err := p.primaryIndex.GetDataFilesForRead(q)
+	query.Begin()
+	defer query.End()
+	dataFiles, err := p.primaryIndex.GetDataFilesForRead(query)
 	if err != nil {
-		return result, fmt.Errorf("failed to query primary index: %w", err)
+		query.SetError(fmt.Errorf("failed to query primary index: %w", err))
+		return query.Result()
 	}
 	// Iterate over the data files
 	for _, df := range dataFiles {
@@ -438,14 +439,16 @@ func (p *PersistentStorage) Query(q *domain.Query) (*domain.QueryResult, error) 
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				return result, fmt.Errorf("failed to read log record: %w", err)
+				query.SetError(fmt.Errorf("failed to read log record: %w", err))
+				return query.Result()
 			}
 			// Check if the record is in the query range
-			if recordMetadata.Timestamp < uint64(q.From.UTC().Unix()) || recordMetadata.Timestamp > uint64(q.To.UTC().Unix()) {
-				result.Miss()
+			if recordMetadata.Timestamp < query.FromDateTime() || recordMetadata.Timestamp > query.ToDateTime() {
+				query.Skip()
 				_, err := dp.Seek(int64(recordMetadata.RecordSize)-int64(offset), io.SeekCurrent)
 				if err != nil {
-					return result, err
+					query.SetError(fmt.Errorf("failed to skip log record: %w", err))
+					return query.Result()
 				}
 				continue
 			}
@@ -458,23 +461,27 @@ func (p *PersistentStorage) Query(q *domain.Query) (*domain.QueryResult, error) 
 			}
 			// Read Labels
 			for i := 0; i < int(recordMetadata.LabelsCount); i++ {
-				_, err = p.codec.ReadLogLabel(&logRecord.Labels[0], dp)
+				_, err = p.codec.ReadLogLabel(&logRecord.Labels[i], dp)
 				if err != nil {
-					return nil, err
+					query.SetError(fmt.Errorf("failed to read label: %w", err))
+					return query.Result()
 				}
 			}
 
 			// Read Message
 			_, err = dp.Read(logRecord.Message)
 			if err != nil {
-				return result, fmt.Errorf("failed to read message: %w", err)
+				query.SetError(fmt.Errorf("failed to read message: %w", err))
+				return query.Result()
 			}
-			// Append the log record to the result
-			result.Hit(&logRecord)
+			// TODO: right now we fully load log record to memory before filtering
+			// 	This could be optimized by filtering on the fly
+			//  This require fast-filtering implementation
+			query.Next(&logRecord)
 		}
 		_ = df.Close()
 	}
-	return result, nil
+	return query.Result()
 }
 
 func (p *PersistentStorage) Close() error {

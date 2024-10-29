@@ -2,6 +2,8 @@ package main
 
 import (
 	"LogDb/internal/adapters/datastor"
+	"LogDb/internal/adapters/filters"
+	"LogDb/internal/adapters/filters/label_conditions"
 	"LogDb/internal/adapters/index"
 	"LogDb/internal/adapters/presenters"
 	"LogDb/internal/adapters/query"
@@ -29,19 +31,30 @@ func main() {
 	idx := index.NewTimestamp(BaseDir, codec)
 	stor := datastor.NewPersistentStorage(BaseDir, codec, idx)
 	render := presenters.NewQueryResultPresenter(presenters.NewLogRecordRawStringPresenter())
+	queryProcessor := query.NewPreparer(filters.Factory, label_conditions.Factory)
+
 	defer stor.Close()
 	builder := query.NewQueryBuilder(query_types.Select, "audit", "logs").
 		SetPartition("shard1").
-		SetTimeRange(time.Now().Add(-24*time.Hour), time.Now()).
+		SetTimeRange(time.Now().Add(-24*time.Hour*10), time.Now()).
 		Where("label.foo", query_types.Exists, nil).
 		Where("label.bar", query_types.IsNotNull, nil).
 		Where("label.baz", query_types.Equal, "fiz").
-		Limit(1000).
+		Where("message", query_types.Contains, "DELETE").
+		Limit(10).
 		AggregateBy(query_types.Minute).
 		SetFormat(query_types.JSON)
-	query := builder.Build()
-	log.Printf("Executing query: %s", query)
-	result, err := stor.Query(&query)
+	q, err := builder.Build()
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("Executing query: %s", q)
+	preparedQ, err := queryProcessor.PrepareQuery(q)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := stor.Query(preparedQ)
 	if err != nil {
 		panic(err)
 	}

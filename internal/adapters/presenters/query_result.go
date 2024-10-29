@@ -73,8 +73,10 @@ func (p *QueryResultPresenter) Present(result *domain.QueryResult) string {
 	// Write the QueryReport Info
 	builder.WriteString("=========== Query Report ===========\n")
 	builder.WriteString(fmt.Sprintf("Report ID   : %s\n", result.Report.Id))
-	builder.WriteString(fmt.Sprintf("Total Count : %d\n", result.Report.Count))
+	builder.WriteString(fmt.Sprintf("Total ScannedItems : %d\n", result.Report.ScannedItems))
 	builder.WriteString(fmt.Sprintf("Hits        : %d\n", result.Report.Hits))
+	builder.WriteString(fmt.Sprintf("Miss        : %d\n", result.Report.Miss))
+	builder.WriteString(fmt.Sprintf("Result Records : %d\n", len(result.Records)))
 	builder.WriteString(fmt.Sprintf("Elapsed Time: %s\n", result.Report.ElapsedTime))
 	builder.WriteString("====================================\n\n")
 

@@ -69,8 +69,8 @@ func (f *FileConsistencyInspector) Report() (*InspectionReport, error) {
 	fmt.Println("\n=========== File Header ===========")
 	fmt.Printf(" %-20s: %d\n", "Version", f.report.Header.Version)
 	fmt.Printf(" %-20s: %d\n", "Id", f.report.Header.Id)
-	fmt.Printf(" %-20s: %d\n", "Record Count", f.report.Header.RecordCount)
-	fmt.Printf(" %-20s: %d\n", "Data Pages Count", len(f.report.DataPages))
+	fmt.Printf(" %-20s: %d\n", "Record ScannedItems", f.report.Header.RecordCount)
+	fmt.Printf(" %-20s: %d\n", "Data Pages ScannedItems", len(f.report.DataPages))
 	fmt.Printf(" %-20s: %d\n", "Checksum", f.report.Header.Checksum)
 	fmt.Printf(" %-20s: %s\n", "Date", f.report.Header.Time().Format(time.RFC3339))
 	fmt.Println("============================================")
@@ -90,7 +90,7 @@ func (f *FileConsistencyInspector) Report() (*InspectionReport, error) {
 
 	// Use tabwriter for aligned output of data pages
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "Page Number\tPage Size\tRecord Count\tCompression Type\tCompressed Page Size")
+	fmt.Fprintln(writer, "Page Number\tPage Size\tRecord ScannedItems\tCompression Type\tCompressed Page Size")
 
 	for _, page := range f.report.DataPages {
 		fmt.Fprintf(writer, "%d\t%d\t%d\t%s\t%d\t\n", page.Number, page.PageSize, page.RecordCount, compression_types.CompressionType(page.CompressionAlgorithm), page.CompressedPageSize)

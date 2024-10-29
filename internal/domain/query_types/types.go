@@ -47,6 +47,7 @@ const (
 	IsNotNull    QueryOperator = "is not null"
 	And          QueryOperator = "and"
 	Or           QueryOperator = "or"
+	Contains     QueryOperator = "contains"
 )
 
 // Condition represents a single condition in the where clause

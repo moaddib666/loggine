@@ -13,22 +13,26 @@ func NewQueryResult(q *Query) *QueryResult {
 	return &QueryResult{
 		Query: q,
 		Report: &QueryReport{
-			Count:       0,
-			Hits:        0,
-			ElapsedTime: 0,
+			ScannedItems: 0,
+			Hits:         0,
+			ElapsedTime:  0,
 		},
 	}
 }
 
 // Miss increments the count of missed records in the query_types result.
 func (qr *QueryResult) Miss() {
-	qr.Report.Count++
+	qr.Report.Miss++
+	qr.Report.ScannedItems++
 }
 
 // Hit increments the count of matched records in the query_types result.
 func (qr *QueryResult) Hit(record *LogRecord) {
-	qr.Report.Count++
+	qr.Report.ScannedItems++
 	qr.Report.Hits++
+	if qr.Report.Hits > *qr.Query.Limit {
+		return
+	}
 	qr.Records = append(qr.Records, record)
 }
 

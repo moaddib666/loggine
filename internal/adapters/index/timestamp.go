@@ -24,16 +24,18 @@ type Timestamp struct {
 	storage ports.DataStorage
 }
 
-func (t *Timestamp) GetDataFilesForRead(q *domain.Query) ([]*domain.DataFile, error) {
+func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]*domain.DataFile, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	fromDateTime := time.Unix(int64(q.FromDateTime()), 0)
+	toDateTime := time.Unix(int64(q.ToDateTime()), 0)
 
 	var files []*domain.DataFile
 	for _, dfs := range t.index {
 		// TODO: optimise search for the date range
 		for _, df := range dfs {
 			// if the data file is not in the range of the query, skip it
-			if df.Time().Before(q.From) || df.Time().After(q.To) {
+			if df.Time().Before(fromDateTime) || df.Time().After(toDateTime) {
 				continue
 			}
 			// This need to be check on exact datapage

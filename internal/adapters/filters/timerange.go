@@ -1,6 +1,8 @@
 package filters
 
-import "time"
+import (
+	"time"
+)
 
 // TimeRangeFilter represents a filter that filters log records by time range.
 type TimeRangeFilter struct {
@@ -32,15 +34,15 @@ func NewDateRangeFilter(startTime time.Time, endTime time.Time) *TimeRangeFilter
 	return &TimeRangeFilter{startTime: uint64(startTime.Unix()), endTime: uint64(endTime.Unix())}
 }
 
-// DisableTimeRangeFilter
-type DisableTimeRangeFilter struct {
-}
+// allTimeFilter is a filter that always returns true.
+type allTimeFilter struct{}
 
-func (t *DisableTimeRangeFilter) FilterByTimeStamp(_ uint64) bool {
+func (a allTimeFilter) IsBefore(timestamp uint64) bool {
 	return true
 }
 
-// NewDisableTimeRangeFilter creates a new DisableTimeRangeFilter.
-func NewDisableTimeRangeFilter() *DisableTimeRangeFilter {
-	return &DisableTimeRangeFilter{}
+func (a allTimeFilter) IsAfter(timestamp uint64) bool {
+	return true
 }
+
+var AllTimeRange = &allTimeFilter{}
