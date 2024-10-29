@@ -74,8 +74,8 @@ func (qb *Builder) SetFormat(format query_types.Format) *Builder {
 // SetTimeRange sets the time range for the query
 func (qb *Builder) SetTimeRange(startTime, endTime time.Time) *Builder {
 	qb.query.QueryTimeRange = &domain.QueryTimeRange{
-		From: startTime,
-		To:   endTime,
+		From: startTime.UTC(),
+		To:   endTime.UTC(),
 	}
 	return qb
 }
