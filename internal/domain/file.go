@@ -53,6 +53,14 @@ func NewDataFileHeader(version uint64, id uint32, year uint64, month uint64, day
 	}
 }
 
+// NewEmptyDataFileHeader creates a new DataFileHeader.
+func NewEmptyDataFileHeader() *DataFileHeader {
+	return &DataFileHeader{
+		FirstDataPageNumber: 0,
+		LastDataPageNumber:  0,
+	}
+}
+
 // UpdateChecksum calculates the checksum of the header.
 func (h *DataFileHeader) UpdateChecksum() {
 	h.Checksum = h.Month + h.Day + h.Year + h.RecordCount + uint64(h.LastDataPageNumber) + uint64(h.Id) + h.Version

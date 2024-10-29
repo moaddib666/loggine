@@ -32,7 +32,20 @@ const DataPageHeaderSize = int(unsafe.Sizeof(DataPageHeader{}.Number) +
 	unsafe.Sizeof(DataPageHeader{}.CompressedPageSize),
 ) // 29 bytes
 
+// NewEmptyDataPageHeader creates a new DataPageHeader.
+func NewEmptyDataPageHeader() *DataPageHeader {
+	return &DataPageHeader{}
+}
+
 type DataPage struct {
 	Header *DataPageHeader
 	io.ReadWriteSeeker
+}
+
+// NewDataPage creates a new DataPage.
+func NewDataPage(header *DataPageHeader, reader io.ReadWriteSeeker) *DataPage {
+	return &DataPage{
+		Header:          header,
+		ReadWriteSeeker: reader,
+	}
 }
