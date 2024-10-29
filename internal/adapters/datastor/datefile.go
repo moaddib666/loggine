@@ -151,16 +151,20 @@ func (d *DataFileManager) GetCurrentDataPage() (*domain.DataPage, error) {
 
 // NextDataPage returns the next data page in the data file
 func (d *DataFileManager) NextDataPage() (*domain.DataPage, error) {
+	if d.dph == nil {
+		return d.FirstDataPage()
+	}
 	currentDataPage, err := d.GetCurrentDataPage()
 	if err != nil {
 		return nil, err
 	}
-	if currentDataPage.Header.Number >= domain.MaxDataPagesInDataFile || currentDataPage.Header.Number >= d.source.Header.LastDataPageNumber {
+	if currentDataPage.Header.Number >= domain.MaxDataPagesInDataFile || currentDataPage.Header.Number > d.source.Header.LastDataPageNumber {
 		return nil, internal_errors.DataPageNumberOutOfRange
 	}
-
-	d.source.Seek(int64(currentDataPage.Header.PageSize), io.SeekCurrent)
-
+	_, err = d.source.Seek(int64(currentDataPage.Header.PageSize), io.SeekCurrent)
+	if err != nil {
+		return nil, err
+	}
 	currentDataPage, err = d.readDataPage()
 	if err != nil {
 		return nil, err
