@@ -3,16 +3,31 @@ package main
 import (
 	"LogDb/internal/adapters/datastor"
 	"LogDb/internal/adapters/serializer"
+	"LogDb/internal/domain"
 	"LogDb/internal/internal_errors"
 	"LogDb/internal/ports"
+	"LogDb/pkg/utils/usage"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
 )
 
+var tsStart = time.Now()
+var MaxAllocMiB uint64 = 0
+var TotalMessages uint64 = 0
+
 func init() {
 	//logrus.SetLevel(logrus.DebugLevel)
+	go func() {
+		for {
+			used := usage.MemoryUsage()
+			if used > MaxAllocMiB {
+				MaxAllocMiB = used
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
 }
 
 type ReadMode int // ReadMode is the mode in which the data file manager is opened.
@@ -34,7 +49,7 @@ const (
 	Scan
 )
 
-var readMode = None
+var readMode = Full
 
 // SetReadMode sets the read mode for the data file manager.
 func SetReadMode(mode ReadMode) {
@@ -87,6 +102,7 @@ func readChunk(fileName string, factory ports.DataFileManagerFactory, dataPageRe
 		sTime := time.Now()
 		nMessages := processDataPage(pageReader, int(dataPageHeader.RecordCount))
 		fmt.Printf("Read %s %d messages in %v \n", readMode, nMessages, time.Since(sTime))
+		TotalMessages += uint64(nMessages)
 	}
 
 	return nil
@@ -159,10 +175,22 @@ func processAllChunks(directory string, factory ports.DataFileManagerFactory, da
 }
 
 func main() {
+	defer func() {
+		fmt.Printf("Max memory usage: %d MiB\n", MaxAllocMiB)
+		fmt.Printf("Total time: %v\n", time.Since(tsStart))
+		fmt.Printf("Total messages: %d\n", TotalMessages)
+	}()
+	// None
+	// Max memory usage: 3 MiB
+	// Total time: 20.718963225s
+	// Full
+	// Max memory usage: 234 MiB
+	// Total time: 4.238060573s
+
 	// Initialize the codec and factories
 	codec := serializer.Default
 	factory := datastor.NewDataFileManagerFactory(codec)
-	dataPageReaderFactory := datastor.NewDataPageReaderFactory(codec)
+	dataPageReaderFactory := datastor.NewDataPageReaderFactory(codec, domain.SmallChunks)
 
 	// Process all chunks in the .storage directory
 	err := processAllChunks(".storage", factory, dataPageReaderFactory)

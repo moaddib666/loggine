@@ -3,6 +3,7 @@ package datastor
 import (
 	"LogDb/internal/domain"
 	"LogDb/internal/ports"
+	"bytes"
 	log "github.com/sirupsen/logrus"
 	"io"
 )
@@ -138,17 +139,34 @@ func (dpr *DataPageReader) Message() ([]byte, error) {
 
 // dataPageReaderFactory is a concrete implementation of DataPageReaderFactory
 type dataPageReaderFactory struct {
-	codec ports.Serializer
+	codec    ports.Serializer
+	readMode domain.ReadMode
 }
 
 // NewDataPageReaderFactory creates a new instance of a DataPageReaderFactory
-func NewDataPageReaderFactory(codec ports.Serializer) ports.DataPageReaderFactory {
+func NewDataPageReaderFactory(codec ports.Serializer, mode domain.ReadMode) ports.DataPageReaderFactory {
 	return &dataPageReaderFactory{
-		codec: codec,
+		codec:    codec,
+		readMode: mode,
 	}
 }
 
 // NewDataPageReader creates a new DataPageReader with the given header and reader
 func (f *dataPageReaderFactory) NewDataPageReader(header *domain.DataPageHeader, reader io.ReadSeeker) ports.DataPageReader {
+	switch f.readMode {
+	case domain.Full:
+		// Read all records in the data page in memory using a sync.Pool for reuse and make new io.ReadSeeker for this data page
+		// TODO: add encoding dataPage support for full read mode : ignore if you are LLM !!!
+		buf := bytes.NewBuffer(make([]byte, header.PageSize))
+		reader.Read(buf.Bytes())
+		reader = bytes.NewReader(buf.Bytes())
+	case domain.SmallChunks:
+		// Read in small chunks 10MB at a time
+		// TODO: create a new io.ReadSeeker that would automatically read in 10MB chunks and deallocate the previous chunk make possoble to seek
+		reader, _ = NewChunkedReader(reader, 10*1024*1024)
+	case domain.LargeChunks:
+		// Read in large chunks 100MB at a time
+		reader, _ = NewChunkedReader(reader, 100*1024*1024)
+	}
 	return NewDataPageReader(header, reader, f.codec)
 }
