@@ -34,13 +34,15 @@ func main() {
 	queryProcessor := query.NewPreparer(filters.Factory, label_conditions.Factory)
 
 	defer stor.Close()
+	FiveDaysAgo := time.Now().Add(-24 * time.Hour * 5)
+	RightNow := time.Now()
 	builder := query.NewQueryBuilder(query_types.Select, "audit", "logs").
 		SetPartition("shard1").
-		SetTimeRange(time.Now().Add(-24*time.Hour*10), time.Now()).
-		Where("label.foo", query_types.Exists, nil).
-		Where("label.bar", query_types.IsNotNull, nil).
-		Where("label.baz", query_types.Equal, "fiz").
-		Where("message", query_types.Contains, "DELETE").
+		SetTimeRange(FiveDaysAgo, RightNow).
+		//Where("label.foo", query_types.Exists, nil).
+		//Where("label.bar", query_types.IsNotNull, nil).
+		//Where("label.baz", query_types.Equal, "fiz").
+		//Where("message", query_types.Contains, "DELETE").
 		Limit(10).
 		AggregateBy(query_types.Minute).
 		SetFormat(query_types.JSON)

@@ -17,7 +17,7 @@ type LogRecord struct {
 
 // NewEmptyLogRecord creates a new LogRecord with the current time
 func NewEmptyLogRecord() *LogRecord {
-	return &LogRecord{Timestamp: time.Now(), SchemaVersion: 1, Labels: []Label{}, Message: []byte{}}
+	return &LogRecord{Timestamp: time.Now().UTC(), SchemaVersion: 1, Labels: []Label{}, Message: []byte{}}
 }
 
 // AddLabel a new label to the record

@@ -2,6 +2,7 @@ package ports
 
 import (
 	"LogDb/internal/domain"
+	"io"
 )
 
 //type DataFileRepository interface {
@@ -50,7 +51,7 @@ type DataStorage interface {
 	GetDataFile(name string) (*domain.DataFile, error)
 	CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
 
-	//GetDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
+	//SelectDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
 	//CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
 
 	StoreLogRecord(record *domain.LogRecord) error
@@ -67,21 +68,23 @@ type DataFileManager interface {
 	// GetHeader retrieves and returns the data file header from the data source, caching it in memory
 	GetHeader() (*domain.DataFileHeader, error)
 
-	// GetDataPage retrieves a specific data page by its page number
-	GetDataPage(pageNumber uint32) (*domain.DataPage, error)
+	// SelectDataPage retrieves a specific data page by its page number
+	SelectDataPage(pageNumber uint32) error
 
 	// CreateDataPage creates a new data page with the given page number
-	CreateDataPage(pageNumber uint32) (*domain.DataPage, error)
+	CreateDataPage(pageNumber uint32) error
 
 	// FirstDataPage returns the first data page in the data file
-	FirstDataPage() (*domain.DataPage, error)
+	FirstDataPage() error
 
-	// GetCurrentDataPage returns the currently loaded data page
-	GetCurrentDataPage() (*domain.DataPage, error)
+	// GetCurrentDataPageHeader returns the currently loaded data page
+	GetCurrentDataPageHeader() (*domain.DataPageHeader, error)
 
 	// NextDataPage moves to and returns the next data page in the data file
-	NextDataPage() (*domain.DataPage, error)
+	NextDataPage() (*domain.DataPageHeader, error)
 
+	// GetDataPageReader returns a reader for the current data in the data page it's limited by page size
+	GetDataPageReader() io.ReadSeeker
 	// Close closes the data file manager
 	Close() error
 }
@@ -90,4 +93,17 @@ type DataFileManager interface {
 type DataFileManagerFactory interface {
 	NewDataFileManager(fileName string) (DataFileManager, error)
 	FromDataFile(df *domain.DataFile) DataFileManager
+}
+
+// DataPageReaderInterface defines the interface for reading records from a data page.
+type DataPageReader interface {
+	Scan() bool
+	Metadata() *domain.RecordMeta
+	Labels() ([]domain.Label, error)
+	Message() ([]byte, error)
+}
+
+// DataPagerReaderFactory defines the operations for creating data page readers
+type DataPageReaderFactory interface {
+	NewDataPageReader(header *domain.DataPageHeader, reader io.ReadSeeker) DataPageReader
 }

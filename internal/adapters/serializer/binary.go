@@ -14,9 +14,6 @@ var Default = &BinarySerializer{}
 // WriteLogRecord writes log record to writer
 func (b *BinarySerializer) WriteLogRecord(record *domain.LogRecord, writer io.Writer) (int, error) {
 	var err error
-	// Header size consists of six uint64 fields (6 * 8 bytes)
-	const headerSize = 8 * 6
-
 	var labelsSize uint64
 	for _, label := range record.Labels {
 		labelsSize += 1 + 8 + uint64(len(label.Value))
@@ -25,7 +22,7 @@ func (b *BinarySerializer) WriteLogRecord(record *domain.LogRecord, writer io.Wr
 	messageSize := uint64(len(record.Message))
 
 	// Total record size
-	recordSize := uint64(headerSize) + labelsSize + messageSize
+	recordSize := uint64(domain.RecordMetaSize) + labelsSize + messageSize
 
 	recordMetaData := domain.RecordMeta{
 		Timestamp:     uint64(record.Timestamp.Unix()),

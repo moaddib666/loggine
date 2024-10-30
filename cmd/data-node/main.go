@@ -41,7 +41,8 @@ func main() {
 	idx := index.NewTimestamp(BaseDir, codec)
 	stor := datastor.NewPersistentStorage(BaseDir, codec, idx)
 	defer stor.Close()
-	writeTimeLimitRecords(5*time.Minute, 1*time.Second, 10_000, stor)
+	//writeTimeLimitRecords(5*time.Minute, 1*time.Second, 10_000, stor)
+	writeLimitRecords(10_000, stor)
 }
 
 func writeLimitRecords(n int, storage *datastor.PersistentStorage) {
