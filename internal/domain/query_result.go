@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"github.com/google/uuid"
+	"time"
+)
 
 type QueryResult struct {
 	Query   *Query
@@ -13,6 +16,7 @@ func NewQueryResult(q *Query) *QueryResult {
 	return &QueryResult{
 		Query: q,
 		Report: &QueryReport{
+			Id:           uuid.New(),
 			ScannedItems: 0,
 			Hits:         0,
 			ElapsedTime:  0,
