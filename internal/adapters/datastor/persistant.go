@@ -2,6 +2,7 @@ package datastor
 
 import (
 	"LogDb/internal/domain"
+	"LogDb/internal/internal_errors"
 	"LogDb/internal/ports"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const defaultFileExt = ".chunk"
@@ -34,12 +36,14 @@ func (s *StorageWriteCursor) SetDataPage(dp *domain.DataPage) {
 }
 
 type PersistentStorage struct {
-	primaryIndex           ports.Index
-	indexes                []ports.Index
-	baseDir                string
-	codec                  ports.Serializer
-	writeCursor            *StorageWriteCursor
-	fileExt                string
+	primaryIndex ports.Index
+	indexes      []ports.Index
+	baseDir      string
+	codec        ports.Serializer
+	writeCursor  *StorageWriteCursor
+	fileExt      string
+
+	dataPageReaderFactory  ports.DataPageReaderFactory
 	dataFileManagerFactory ports.DataFileManagerFactory
 }
 
@@ -60,6 +64,7 @@ func NewPersistentStorage(baseDir string, codec ports.Serializer, primaryIndex p
 			Mutex:    sync.Mutex{},
 		},
 		dataFileManagerFactory: NewDataFileManagerFactory(codec),
+		dataPageReaderFactory:  NewDataPageReaderFactory(codec, domain.SmallChunks), // Fixme: make posible to set chunk size or determine depends on avg data page size
 		fileExt:                defaultFileExt,
 	}
 	stor.initIndexes()
@@ -416,82 +421,66 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 	// Query the primary index
 	query.Begin()
 	defer query.End()
-	//dataFiles, err := p.primaryIndex.GetDataFilesForRead(query)
-	//if err != nil {
-	//	query.SetError(fmt.Errorf("failed to query primary index: %w", err))
-	//	return query.Result()
-	//}
+	dataFiles, err := p.primaryIndex.GetDataFilesForRead(query)
+	if err != nil {
+		query.SetError(fmt.Errorf("failed to query primary index: %w", err))
+		return query.Result()
+	}
+	// Query the secondary indexes if any
 
 	// Iterate over the data files
-	//for _, df := range dataFiles {
-	//	// TODO: optimize the read Need to find first minute and last minute for each file and unde
-	//	//firstMinute := df.Header.Time().Add(time.Minute * time.Duration(df.Header.FirstDataPageNumber)).Unix()
-	//	//lastMinute := df.Header.Time().Add(time.Minute * time.Duration(df.Header.LastDataPageNumber)).Unix()
-	//
-	//	dataFileManager := p.dataFileManagerFactory.FromDataFile(df)
-	//	for {
-	//		dp, err := dataFileManager.NextDataPage()
-	//		if err != nil {
-	//			//if errors.Is(err, internal_errors.DataPageNumberOutOfRange) {
-	//			//	break
-	//			//}
-	//			log.Printf("failed to get data page: %v", err)
-	//			break
-	//		}
-	//		// TODO: Add to some abstraction
-	//		// TODO: Filter by pages if page not in before after we could not prcess it just skip
-	//		// Read through the data page
-	//		for i := 0; i < int(dp.Header.RecordCount); i++ {
-	//			recordMetadata := &domain.RecordMeta{}
-	//			offset, err := p.codec.ReadLogRecordMeta(recordMetadata, dp)
-	//			if err != nil {
-	//				if errors.Is(err, io.EOF) {
-	//					break
-	//				}
-	//				query.SetError(fmt.Errorf("failed to read log record: %w", err))
-	//				return query.Result()
-	//			}
-	//			// Check if the record is in the query range
-	//			if recordMetadata.Timestamp < query.FromDateTime() || recordMetadata.Timestamp > query.ToDateTime() {
-	//				// FIXME +1 extra row read to query and it's invalid ts like MAX uint64
-	//				query.Skip()
-	//				_, err := dp.Seek(int64(recordMetadata.RecordSize)-int64(offset), io.SeekCurrent)
-	//				if err != nil {
-	//					query.SetError(fmt.Errorf("failed to skip log record: %w", err))
-	//					return query.Result()
-	//				}
-	//				continue
-	//			}
-	//
-	//			logRecord := domain.LogRecord{
-	//				SchemaVersion: 0,
-	//				Labels:        make([]domain.Label, recordMetadata.LabelsCount, recordMetadata.LabelsCount),
-	//				Message:       make([]byte, recordMetadata.MessageSize, recordMetadata.MessageSize),
-	//				Timestamp:     time.Unix(int64(recordMetadata.Timestamp), 0),
-	//			}
-	//			// Read Labels
-	//			for i := 0; i < int(recordMetadata.LabelsCount); i++ {
-	//				_, err = p.codec.ReadLogLabel(&logRecord.Labels[i], dp)
-	//				if err != nil {
-	//					query.SetError(fmt.Errorf("failed to read label: %w", err))
-	//					return query.Result()
-	//				}
-	//			}
-	//
-	//			// Read Message
-	//			_, err = dp.Read(logRecord.Message)
-	//			if err != nil {
-	//				query.SetError(fmt.Errorf("failed to read message: %w", err))
-	//				return query.Result()
-	//			}
-	//			// TODO: right now we fully load log record to memory before filtering
-	//			// 	This could be optimized by filtering on the fly
-	//			//  This require fast-filtering implementation
-	//			query.Next(&logRecord)
-	//		}
-	//	}
-	//	_ = df.Close()
-	//}
+	for _, df := range dataFiles {
+		dataFileManager := p.dataFileManagerFactory.FromDataFile(df)
+		defer dataFileManager.Close()
+
+		_, err := dataFileManager.GetHeader()
+		if err != nil {
+			query.SetError(fmt.Errorf("failed to get data file header: %w", err))
+			return query.Result()
+		}
+		for {
+			dataPageHeader, err := dataFileManager.NextDataPage()
+			if err != nil {
+				if errors.Is(err, internal_errors.NoDataPagesLeft) {
+					break
+				}
+				query.SetError(fmt.Errorf("failed to get data page: %w", err))
+				return query.Result()
+			}
+			if dataPageHeader.RecordCount < 1 {
+				continue
+			}
+			// Initialize the data page reader
+			pageReader := p.dataPageReaderFactory.NewDataPageReader(dataPageHeader, dataFileManager.GetDataPageReader())
+
+			// Process each record in the page
+			for i := 0; i < int(dataPageHeader.RecordCount); i++ {
+				if !pageReader.Scan() {
+					break
+				}
+
+				meta := pageReader.Metadata()
+				labels, err := pageReader.Labels()
+				if err != nil {
+					fmt.Printf("Error reading labels: %v\n", err)
+					break
+				}
+				message, err := pageReader.Message()
+				if err != nil {
+					fmt.Printf("Error reading message: %v\n", err)
+					break
+				}
+				logRecord := &domain.LogRecord{
+					SchemaVersion: meta.SchemaVersion,
+					Labels:        labels,
+					Message:       message,
+					Timestamp:     time.Unix(int64(meta.Timestamp), 0),
+				}
+				query.Next(logRecord)
+			}
+		}
+
+	}
 	return query.Result()
 }
 

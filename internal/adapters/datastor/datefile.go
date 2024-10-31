@@ -273,9 +273,6 @@ func (d *DataFileReader) Close() error {
 	if d.source == nil {
 		return nil
 	}
-	if err := d.writeHeader(); err != nil {
-		return err
-	}
 	return d.source.Close()
 }
 
