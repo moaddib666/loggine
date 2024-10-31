@@ -1,11 +1,17 @@
 package datastor
 
 import (
+	"LogDb/internal/adapters/compression"
 	"LogDb/internal/domain"
+	"LogDb/internal/domain/compression_types"
 	"LogDb/internal/ports"
 	"bytes"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"io/ioutil"
+	"os"
+	"time"
 )
 
 // DataPageReader reads records from a data page.
@@ -153,6 +159,16 @@ func NewDataPageReaderFactory(codec ports.Serializer, mode domain.ReadMode) port
 
 // NewDataPageReader creates a new DataPageReader with the given header and reader
 func (f *dataPageReaderFactory) NewDataPageReader(header *domain.DataPageHeader, reader io.ReadSeeker) ports.DataPageReader {
+
+	if header.CompressionAlgorithm != compression_types.None {
+		fileReader, err := NewTmpDataPageReader(reader, header.CompressionAlgorithm, int64(header.CompressedPageSize), 30*time.Second)
+		if err != nil {
+			log.Fatalf("Failed to create temporary data page reader: %v", err)
+		}
+		reader = fileReader
+	}
+	// I need remove this temp file if it's not needed anymore for N seconds
+
 	switch f.readMode {
 	case domain.Full:
 		// Read all records in the data page in memory using a sync.Pool for reuse and make new io.ReadSeeker for this data page
@@ -169,4 +185,65 @@ func (f *dataPageReaderFactory) NewDataPageReader(header *domain.DataPageHeader,
 		reader, _ = NewChunkedReader(reader, 100*1024*1024)
 	}
 	return NewDataPageReader(header, reader, f.codec)
+}
+
+// NewTmpDataPageReader creates a new reader for a compressed data page.
+// It decompresses the data page into memory or a temporary file based on the dataPageSize.
+// If dataPageSize > 1GB, it uses a temporary file; otherwise, it uses memory.
+// The temporary file is wrapped in a tempFileReader with TTL functionality.
+func NewTmpDataPageReader(
+	reader io.ReadSeeker,
+	compressionAlgorithm compression_types.CompressionType,
+	dataPageSize int64,
+	ttl time.Duration,
+) (io.ReadSeeker, error) {
+	// Get the appropriate decompressor
+	decompressor := compression.Factory(compressionAlgorithm)
+	if decompressor == nil {
+		return nil, fmt.Errorf("unsupported compression algorithm: %v", compressionAlgorithm)
+	}
+
+	var decompressedReader io.ReadSeeker
+	var err error
+
+	if dataPageSize > 1*1024*1024*1024 { // Data page size > 1GB
+		// Use a temporary file
+		tmpFile, err := ioutil.TempFile("", "decompressed_data_page_*")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temporary file: %v", err)
+		}
+
+		// Decompress into the temporary file
+		_, err = decompressor.DecompressStream(reader, tmpFile)
+		if err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return nil, fmt.Errorf("failed to decompress data: %v", err)
+		}
+
+		// Seek to the beginning of the temporary file
+		_, err = tmpFile.Seek(0, io.SeekStart)
+		if err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return nil, fmt.Errorf("failed to seek in temporary file: %v", err)
+		}
+
+		// Wrap the tmpFile in tempFileReader with TTL
+		decompressedReader = newTempFileReader(tmpFile, ttl)
+	} else {
+		// Use RAM buffer
+		var buf bytes.Buffer
+
+		// Decompress into the buffer
+		_, err = decompressor.DecompressStream(reader, &buf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress data: %v", err)
+		}
+
+		// Create a ReadSeeker from the buffer
+		decompressedReader = bytes.NewReader(buf.Bytes())
+	}
+
+	return decompressedReader, nil
 }

@@ -197,13 +197,11 @@ func (d *DataFileReader) readDataPage() error {
 	d.logger.Debugf("Current position after reading page header: %d", currentPosition)
 
 	// Create a new SectionReader from the current position with the size of the current page
-	//d.currentDataPageReader = d.source
-	d.currentDataPageReader = io.NewSectionReader(d.source, currentPosition, int64(d.currentDataPageHeader.PageSize))
-	//d.currentDataPageReader = newDataReaderWithCallback(
-	//	io.NewSectionReader(d.source, currentPosition, int64(d.currentDataPageHeader.PageSize)),
-	//	d.incrementNumberOfDataPageBytesRead, d.setNumberOfDataPageBytesRead,
-	//)
-
+	if d.currentDataPageHeader.CompressedPageSize != 0 {
+		d.currentDataPageReader = io.NewSectionReader(d.source, currentPosition, int64(d.currentDataPageHeader.CompressedPageSize))
+	} else {
+		d.currentDataPageReader = io.NewSectionReader(d.source, currentPosition, int64(d.currentDataPageHeader.PageSize))
+	}
 	// Reset the number of bytes read
 	d.numberOfDataPageBytesRead = 0
 
@@ -244,17 +242,6 @@ func (d *DataFileReader) NextDataPage() (*domain.DataPageHeader, error) {
 	}
 	// TODO: understand if any messages was read and minus thaier size from the page size to seek to the next page
 	d.source.Seek(int64(d.currentDataPageHeader.PageSize), io.SeekCurrent)
-	//needShift := int64(d.currentDataPageHeader.PageSize) - d.numberOfDataPageBytesRead
-	//if needShift > 0 {
-	//	d.logger.Debugf("Seeking to the next data page. Need to shift %d bytes", needShift)
-	//	ret, err := d.source.Seek(needShift, io.SeekCurrent)
-	//	logrus.Debugf("Seek to next data page %d", ret)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//} else {
-	//	d.logger.Debugf("All records from the current data page were read.")
-	//}
 	err := d.readDataPage()
 	if err != nil {
 		return nil, err
