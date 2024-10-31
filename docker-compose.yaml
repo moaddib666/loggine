@@ -6,7 +6,7 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms128m -Xmx128m"  # Adjusted to 256m
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"  # Adjusted to 256m
       - plugins.security.disabled=true
       - "OPENSEARCH_INITIAL_ADMIN_PASSWORD=YOUR_Paldfnksfo22dsaASSWORD"
     ulimits:
@@ -38,7 +38,7 @@ services:
     container_name: opensearch-proxy
     environment:
       - TARGET_URL=http://opensearch:9200
-      - PROXY_PORT=8080
+      - PROXY_PORT=:8080
     networks:
       - opensearch-net
     ports:

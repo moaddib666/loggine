@@ -6,7 +6,8 @@ WORKDIR /app
 # Copy the Go modules and source code
 COPY go.mod go.sum ./
 RUN go mod download
-COPY cmd/transparent_proxy/* .
+COPY cmd/opensearch/* .
+COPY internal/adapters/opensearch internal/adapters/opensearch
 
 # Build a statically linked binary to avoid libc issues
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/opensearch-proxy .
