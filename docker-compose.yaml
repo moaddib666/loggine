@@ -1,0 +1,52 @@
+version: '3.8'
+services:
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms128m -Xmx128m"  # Adjusted to 256m
+      - plugins.security.disabled=true
+      - "OPENSEARCH_INITIAL_ADMIN_PASSWORD=YOUR_Paldfnksfo22dsaASSWORD"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - opensearch-net
+    ports:
+      - 9200:9200
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: dashboards
+    environment:
+      - OPENSEARCH_HOSTS=http://proxy:8080  # Point to the proxy
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    networks:
+      - opensearch-net
+    depends_on:
+      - proxy
+    ports:
+      - 5601:5601
+
+  proxy:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/transparent_proxy/Dockerfile
+    container_name: opensearch-proxy
+    environment:
+      - TARGET_URL=http://opensearch:9200
+      - PROXY_PORT=8080
+    networks:
+      - opensearch-net
+    ports:
+      - 8080:8080
+    depends_on:
+      - opensearch
+
+networks:
+  opensearch-net:
+    name: opensearch-net  # Explicitly name the network to prevent Docker from creating duplicates
+    driver: bridge
