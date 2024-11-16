@@ -1,0 +1,239 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/api/v1/insert/record": {
+            "post": {
+                "description": "Insert a single log record into storage",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Insert a single log record",
+                "parameters": [
+                    {
+                        "description": "Record to Insert",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web_api.StoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.StoreResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/insert/records": {
+            "post": {
+                "description": "Insert multiple log records into storage",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Insert multiple log records",
+                "parameters": [
+                    {
+                        "description": "Records to Insert",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web_api.StoreBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.StoreResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/search/records": {
+            "post": {
+                "description": "Search log records based on criteria",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Search for log records",
+                "parameters": [
+                    {
+                        "description": "Search Criteria",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web_api.SearchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.SearchResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "web_api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "web_api.Record": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "string_labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "web_api.SearchReport": {
+            "type": "object",
+            "properties": {
+                "time_taken": {
+                    "type": "number"
+                },
+                "total_records": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web_api.SearchRequest": {
+            "type": "object",
+            "properties": {
+                "from_time": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "message_contains": {
+                    "type": "string"
+                },
+                "sharding_key": {
+                    "type": "string"
+                },
+                "to_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "web_api.SearchResult": {
+            "type": "object",
+            "properties": {
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web_api.Record"
+                    }
+                },
+                "report": {
+                    "$ref": "#/definitions/web_api.SearchReport"
+                }
+            }
+        },
+        "web_api.StoreBatchRequest": {
+            "type": "object",
+            "properties": {
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web_api.Record"
+                    }
+                },
+                "sharding_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "web_api.StoreRequest": {
+            "type": "object",
+            "properties": {
+                "record": {
+                    "$ref": "#/definitions/web_api.Record"
+                },
+                "sharding_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "web_api.StoreResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "record_inserted": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        }
+    }
+}

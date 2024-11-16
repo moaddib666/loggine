@@ -1,0 +1,31 @@
+### Insert Record Request
+POST http://localhost:8080/api/v1/insert/record
+Accept: application/json
+Content-Type: application/json
+
+{
+  "record": {
+    "message": "This is a sample log message",
+    "string_labels": {
+      "label1": "value1",
+      "label2": "value2",
+      "label3": "value3"
+    },
+    "timestamp": "2023-11-07T12:00:00Z"
+  },
+  "sharding_key": "shard-01"
+}
+
+
+### Search Records Request
+POST http://localhost:8080/api/v1/search/records
+Accept: application/json
+Content-Type: application/json
+
+{
+  "from_time": "2023-11-07T00:00:00Z",
+  "to_time": "2023-11-07T23:59:59Z",
+  "limit": 100,
+  "message_contains": "sample log",
+  "sharding_key": "shard-01"
+}

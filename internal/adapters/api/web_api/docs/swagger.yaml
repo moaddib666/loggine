@@ -1,0 +1,153 @@
+definitions:
+  web_api.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  web_api.Record:
+    properties:
+      message:
+        type: string
+      string_labels:
+        additionalProperties:
+          type: string
+        type: object
+      timestamp:
+        type: string
+    type: object
+  web_api.SearchReport:
+    properties:
+      time_taken:
+        type: number
+      total_records:
+        type: integer
+    type: object
+  web_api.SearchRequest:
+    properties:
+      from_time:
+        type: string
+      limit:
+        type: integer
+      message_contains:
+        type: string
+      sharding_key:
+        type: string
+      to_time:
+        type: string
+    type: object
+  web_api.SearchResult:
+    properties:
+      records:
+        items:
+          $ref: '#/definitions/web_api.Record'
+        type: array
+      report:
+        $ref: '#/definitions/web_api.SearchReport'
+    type: object
+  web_api.StoreBatchRequest:
+    properties:
+      records:
+        items:
+          $ref: '#/definitions/web_api.Record'
+        type: array
+      sharding_key:
+        type: string
+    type: object
+  web_api.StoreRequest:
+    properties:
+      record:
+        $ref: '#/definitions/web_api.Record'
+      sharding_key:
+        type: string
+    type: object
+  web_api.StoreResult:
+    properties:
+      error:
+        type: string
+      record_inserted:
+        type: integer
+      success:
+        type: boolean
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/insert/record:
+    post:
+      consumes:
+      - application/json
+      description: Insert a single log record into storage
+      parameters:
+      - description: Record to Insert
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web_api.StoreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web_api.StoreResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web_api.ErrorResponse'
+      summary: Insert a single log record
+      tags:
+      - logs
+  /api/v1/insert/records:
+    post:
+      consumes:
+      - application/json
+      description: Insert multiple log records into storage
+      parameters:
+      - description: Records to Insert
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web_api.StoreBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web_api.StoreResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web_api.ErrorResponse'
+      summary: Insert multiple log records
+      tags:
+      - logs
+  /api/v1/search/records:
+    post:
+      consumes:
+      - application/json
+      description: Search log records based on criteria
+      parameters:
+      - description: Search Criteria
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web_api.SearchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web_api.SearchResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web_api.ErrorResponse'
+      summary: Search for log records
+      tags:
+      - logs
+swagger: "2.0"
