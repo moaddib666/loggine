@@ -90,3 +90,27 @@ func NewDataFile(header *DataFileHeader, f *os.File) *DataFile {
 		File:   f,
 	}
 }
+
+// NewDataFileFromPath creates a new DataFile from a file path.
+func NewDataFileFromPath(header *DataFileHeader, path string, accessFlag int) (*DataFile, error) {
+	f, err := os.OpenFile(path, accessFlag, 0600)
+	if err != nil {
+		return nil, err
+	}
+	return NewDataFile(header, f), nil
+}
+
+// NewWriteOnlyDataFile creates a new DataFile with write only access.
+func NewWriteOnlyDataFile(header *DataFileHeader, path string) (*DataFile, error) {
+	return NewDataFileFromPath(header, path, os.O_WRONLY|os.O_CREATE)
+}
+
+// NewReadOnlyDataFile creates a new DataFile with read only access.
+func NewReadOnlyDataFile(header *DataFileHeader, path string) (*DataFile, error) {
+	return NewDataFileFromPath(header, path, os.O_RDONLY)
+}
+
+// NewReadWriteDataFile creates a new DataFile with read write access.
+func NewReadWriteDataFile(header *DataFileHeader, path string) (*DataFile, error) {
+	return NewDataFileFromPath(header, path, os.O_RDWR|os.O_CREATE)
+}

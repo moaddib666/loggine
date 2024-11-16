@@ -45,16 +45,31 @@ type LogTransformer interface {
 	FromBytes(b []byte) *domain.LogRecord
 }
 
+type DataStorageWritable interface {
+	StoreLogRecord(record *domain.LogRecord) error
+	Close() error
+}
+
+type DataStorageReadable interface {
+	Query(query PreparedQuery) (*domain.QueryResult, error)
+	Close() error
+}
+
+type DataStorageWritableFactory interface {
+	NewDataStorageWritable() (DataStorageWritable, error)
+}
+
 type DataStorage interface {
-	GetDataFilesHeaders() ([]*domain.DataFileHeader, error)
+	//GetDataFilesHeaders() ([]*domain.DataFileHeader, error)
 	// TODO: Add flags to the function like readonly, writeonly, readwrite
-	GetDataFile(name string) (*domain.DataFile, error)
-	CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
+	//GetDataFile(name string) (*domain.DataFile, error)
+	//CreateDataFile(name string, id uint32, y, m, d uint64) (*domain.DataFile, error)
 
 	//SelectDataPage(pageNumber uint32, df *domain.DataFile) (*domain.DataPage, error)
 	//CreateDataPage(df *domain.DataFile, pageNumber uint32) (*domain.DataPage, error)
 
 	StoreLogRecord(record *domain.LogRecord) error
+
 	Query(query PreparedQuery) (*domain.QueryResult, error)
 
 	GetFileExt() string
@@ -89,8 +104,8 @@ type DataFileReader interface {
 	Close() error
 }
 
-// DataFileManagerFactory defines the operations for creating data file managers
-type DataFileManagerFactory interface {
+// DataFileReaderFactory defines the operations for creating data file managers
+type DataFileReaderFactory interface {
 	NewDataFileManager(fileName string) (DataFileReader, error)
 	FromDataFile(df *domain.DataFile) DataFileReader
 }
@@ -108,27 +123,29 @@ type DataPageReaderFactory interface {
 	NewDataPageReader(header *domain.DataPageHeader, reader io.ReadSeeker) DataPageReader
 }
 
-// DataFileWriter defines the operations for writing data to a data file
+// DataFileWriter defines the operations for writing data to a data file it's append only
 type DataFileWriter interface {
-	// Open opens the data file for writing
-	Open(basedir, fileName string) error
-	//// Create creates a new data file with the given ID and date
-	Create(basedir string, id uint32, y, m, day uint64) error
-
 	// Close flushes any remaining data and closes the file
 	Close() error
+	// Sync flushes any remaining data to the file
+	Sync() error
+	// GetLastDataPage retrieves and returns the data file header from the data source, caching it in memory
+	GetLastDataPage() (*domain.DataPageHeader, error)
+	// AppendDataPage creates a new data page with the given page number
+	AppendDataPage(*domain.DataPageHeader) error
+	// AppendLogRecordToCurrentDataPage appends a log record to the current data page
+	AppendLogRecordToCurrentDataPage(*domain.LogRecord) error
+}
 
-	// CreateDataPage creates a new data page in the data file
-	CreateDataPage(pageNumber uint32) error
-
-	// WriteLogRecord writes a log record to the current data page
-	WriteLogRecord(record *domain.LogRecord) error
+type DataPageHeaderFactory interface {
+	NewEmptyPageHeader() *domain.DataPageHeader
+	FromLogRecord(record *domain.LogRecord) *domain.DataPageHeader
+	FromMinuteNumber(number uint32) *domain.DataPageHeader
 }
 
 // DataFileWriterFactory defines the operations for creating data page writers
-// TODO: think about separate data page writer and data file writer
 type DataFileWriterFactory interface {
-	New() DataFileWriter
+	New() (DataFileWriter, error)
 	Create(id uint32, y, m, day uint64) (DataFileWriter, error)
 	Open(fileName string) (DataFileWriter, error)
 }

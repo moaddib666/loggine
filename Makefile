@@ -17,5 +17,8 @@ GO_FLAGS=-ldflags="-s -w"
 .build-compressor:
 	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/compressor ./cmd/compression_challange/...
 
-build: .build-inspector .build-data-node .build-client .build-compressor
+.docs:
+	swag init -g cmd/application/main.go -o internal/adapters/api/web_api/docs
+
+build: .docs .build-inspector .build-data-node .build-client .build-compressor
 

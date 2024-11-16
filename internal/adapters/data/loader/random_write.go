@@ -21,40 +21,6 @@ func RandomLogsLoader(cb callback, limit int) {
 	}
 }
 
-// LimitLogsLoader generates log records within a specific time frame.
-func LimitLogsLoader(dateStart time.Time, dateEnd time.Time, cb callback, limit int, chunkSize int) {
-	// Calculate the total duration
-	totalDuration := dateEnd.Sub(dateStart)
-	if totalDuration <= 0 {
-		log.Fatalf("Invalid date range: start time must be before end time")
-	}
-
-	// Generate logs within the specified time frame
-	recordsGenerated := 0
-	currentTime := dateStart
-
-	for recordsGenerated < limit {
-		for i := 0; i < chunkSize && recordsGenerated < limit; i++ {
-			// Generate a random timestamp within the current minute
-			randomOffset := time.Duration(rand.Intn(60)) * time.Second
-			timestamp := currentTime.Add(randomOffset)
-
-			// Construct and append the log record
-			record := constructLogRecord(timestamp)
-			err := cb(record)
-			if err != nil {
-				log.Fatalf("Error appending record: %v", err)
-			}
-			recordsGenerated++
-		}
-		// Move to the next minute in the sequence
-		currentTime = currentTime.Add(time.Minute)
-		if currentTime.After(dateEnd) {
-			break
-		}
-	}
-}
-
 // constructLogRecord creates a log record with a random message and labels.
 func constructLogRecord(ts time.Time) *domain.LogRecord {
 	return &domain.LogRecord{

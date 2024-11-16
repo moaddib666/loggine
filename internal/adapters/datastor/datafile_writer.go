@@ -10,145 +10,168 @@ import (
 	"github.com/sirupsen/logrus"
 	"io"
 	"os"
-	"path"
 	"sync"
 	"time"
 )
+
+var _ ports.DataFileWriter = &DataFileWriter{}
 
 type DataFileWriter struct {
 	source                *domain.DataFile
 	currentDataPageHeader *domain.DataPageHeader
 	codec                 ports.Serializer
-	compressorFactory     ports.CompressionFactoryMethod
-	compressionType       compression_types.CompressionType
 	logger                *logrus.Entry
 	logsBuffer            *bytes.Buffer
 	mu                    sync.Mutex
 	flushErrChan          chan error
+	bufferFlushSizeBytes  int
 }
 
-// TODO: refactor this to use data pages instead of templating it here
-
-// NewDataFileWriter creates a new DataFileWriter
-func NewDataFileWriter(codec ports.Serializer, compressor ports.CompressionFactoryMethod, logger *logrus.Entry) *DataFileWriter {
-	return &DataFileWriter{
-		codec:             codec,
-		compressorFactory: compressor,
-		logger:            logger,
-		logsBuffer:        &bytes.Buffer{},
-		flushErrChan:      make(chan error, 1),
-	}
-}
-
-// Open opens the data file for writing
-func (d *DataFileWriter) Open(basedir, fileName string) error {
-	f, err := os.OpenFile(path.Join(basedir, fileName), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	d.source = domain.NewDataFile(domain.NewEmptyDataFileHeader(), f)
-	_, err = d.codec.ReadFileHeader(d.source.Header, f)
-	if err != nil {
-		return err
-	}
-	_, err = d.source.Seek(0, io.SeekEnd)
-	return err
-}
-
-// Create creates a new data file
-func (d *DataFileWriter) Create(basedir string, id uint32, y, m, day uint64) error {
-	header := domain.NewDataFileHeader(1, id, y, m, day)
-	fh, err := os.OpenFile(path.Join(basedir, header.String()), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	d.source = domain.NewDataFile(header, fh)
-	return nil
-}
-
-// Close flushes any remaining data and closes the file
-func (d *DataFileWriter) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (d *DataFileWriter) sync() error {
+	d.logger.Debugf("Syncing data file %s", d.source.Header)
 	if d.source == nil {
 		return nil
 	}
-	if d.currentDataPageHeader != nil {
-		if err := d.updateCurrentDataPageHeader(); err != nil {
-			return err
-		}
+	if err := d.flushBuffer(); err != nil {
+		return err
 	}
+	if err := d.flushCurrentDataPageHeader(); err != nil {
+		return err
+	}
+	if err := d.flushDataFileHeader(); err != nil {
+		return err
+	}
+	if err := d.source.Sync(); err != nil {
+		return err
+	}
+	if _, err := d.source.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *DataFileWriter) Sync() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sync()
+}
+
+// flushDataFileHeader updates the data file header
+func (d *DataFileWriter) flushDataFileHeader() error {
+	d.logger.Debugf("Updating data file header %s", d.source.Header)
 	_, err := d.source.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
 	_, err = d.codec.WriteFileHeader(d.source.Header, d.source)
-	if err != nil {
+	return err
+}
+
+func (d *DataFileWriter) GetLastDataPage() (*domain.DataPageHeader, error) {
+	return d.currentDataPageHeader, nil
+}
+
+// NewDataFileWriter creates a new DataFileWriter
+func NewDataFileWriter(dataFile *domain.DataFile, codec ports.Serializer, logger *logrus.Entry) *DataFileWriter {
+	dfw := &DataFileWriter{
+		codec:                codec,
+		logger:               logger,
+		logsBuffer:           &bytes.Buffer{},
+		flushErrChan:         make(chan error, 1),
+		source:               dataFile,
+		bufferFlushSizeBytes: 1024 * 1024, // 1MB
+	}
+	// FIXME: Move this to configurable options
+	WithAutoFlush(5*time.Second, dfw)
+	return dfw
+}
+
+// WithAutoFlush(time time.Duration)
+func WithAutoFlush(interval time.Duration, dfw *DataFileWriter) {
+	go func() {
+		for {
+			select {
+			case <-time.After(interval):
+				err := dfw.Sync()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+}
+
+// Close flushes any remaining data and closes the file
+func (d *DataFileWriter) Close() error {
+	if err := d.Sync(); err != nil {
 		return err
 	}
 	return d.source.Close()
 }
 
-// updateCurrentDataPageHeader updates the current data page header
-func (d *DataFileWriter) updateCurrentDataPageHeader() error {
-
-	if err := d.flushBuffer(); err != nil {
-		return err
-	}
-
+// flushCurrentDataPageHeader updates the current data page header
+func (d *DataFileWriter) flushCurrentDataPageHeader() error {
 	if d.currentDataPageHeader == nil {
 		return internal_errors.DataPageNotSelected
 	}
-	var err error
+	d.logger.Debugf("Updating data page header %s", d.currentDataPageHeader)
+	// check if buffer is empty
+	if d.logsBuffer.Len() != 0 {
+		return errors.New("buffer is not empty")
+	}
+	var offset = int64(domain.DataPageHeaderSize)
 	if d.currentDataPageHeader.CompressionAlgorithm != compression_types.None {
-		_, err = d.source.Seek(int64(d.currentDataPageHeader.CompressedPageSize), io.SeekEnd)
+		offset += int64(d.currentDataPageHeader.CompressedPageSize)
 	} else {
-		_, err = d.source.Seek(int64(d.currentDataPageHeader.PageSize), io.SeekEnd)
+		offset += int64(d.currentDataPageHeader.PageSize)
 	}
-	if err != nil {
+	if pos, err := d.source.Seek(-offset, io.SeekEnd); err != nil {
 		return err
+	} else {
+		d.logger.Debugf("Seeked to %d", pos)
 	}
-	_, err = d.codec.WriteDataPageHeader(d.currentDataPageHeader, d.source)
+	_, err := d.codec.WriteDataPageHeader(d.currentDataPageHeader, d.source)
 
-	// seek to the end of the file
 	return err
 }
 
-// CreateDataPage creates a new data page in the data file
-func (d *DataFileWriter) CreateDataPage(pageNumber uint32) error {
+// AppendDataPage creates a new data page in the data file
+func (d *DataFileWriter) AppendDataPage(header *domain.DataPageHeader) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	if pageNumber >= domain.MaxDataPagesInDataFile || pageNumber <= d.source.Header.LastDataPageNumber {
+	if header.Number >= domain.MaxDataPagesInDataFile || header.Number <= d.source.Header.LastDataPageNumber && d.source.Header.LastDataPageNumber != 0 {
 		return internal_errors.DataPageNumberOutOfRange
 	}
 
 	// Flush the current data page if it exists
 	if d.currentDataPageHeader != nil {
-		if err := d.updateCurrentDataPageHeader(); err != nil {
+		// sync in hard operation use fast data update here
+		if err := d.flushBuffer(); err != nil {
+			return err
+		}
+		if err := d.flushCurrentDataPageHeader(); err != nil {
+			return err
+		}
+
+		if _, err := d.source.Seek(0, io.SeekEnd); err != nil {
 			return err
 		}
 	}
 
 	// Create a new data page header
-	d.currentDataPageHeader = domain.NewEmptyDataPageHeader()
-	d.currentDataPageHeader.Number = pageNumber
+	d.currentDataPageHeader = header
+	d.source.Header.LastDataPageNumber = header.Number
 
-	_, err := d.source.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
-	}
-	_, err = d.codec.WriteDataPageHeader(d.currentDataPageHeader, d.source)
-	if err != nil {
+	// Write 00 size of DataPageHeader to the file
+	if _, err := d.codec.WriteDataPageHeader(header, d.source); err != nil {
 		return err
 	}
 
-	d.source.Header.LastDataPageNumber = pageNumber
 	return nil
 }
 
-// WriteLogRecord writes a log record to the buffer
-func (d *DataFileWriter) WriteLogRecord(record *domain.LogRecord) error {
+// AppendLogRecordToCurrentDataPage writes a log record to the buffer
+func (d *DataFileWriter) AppendLogRecordToCurrentDataPage(record *domain.LogRecord) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -166,7 +189,7 @@ func (d *DataFileWriter) WriteLogRecord(record *domain.LogRecord) error {
 	d.source.Header.RecordCount++
 
 	// Flush the buffer if it exceeds 1MB
-	if d.logsBuffer.Len() >= 1024*1024 {
+	if d.logsBuffer.Len() >= d.bufferFlushSizeBytes {
 		return d.flushBuffer()
 	}
 
@@ -178,39 +201,25 @@ func (d *DataFileWriter) flushBuffer() error {
 	if d.logsBuffer.Len() == 0 {
 		return nil
 	}
-
-	writer := d.compressorFactory(d.compressionType)
-
-	// Create a copy of the buffer to avoid blocking writes
-	bufferCopy := bytes.NewBuffer(d.logsBuffer.Bytes())
-	d.logsBuffer.Reset()
-
+	d.logger.Debugf("Flushing buffer to data file %s", d.source.Header)
 	// Compress and write the data
-	compSizeChan := make(chan int64, 1)
-	go func() {
-		compSize, err := writer.CompressStream(bufferCopy, d.source)
-		if err != nil {
-			d.flushErrChan <- err
-			return
-		}
-		compSizeChan <- compSize
-	}()
 
-	// Wait for the compression to complete
-	select {
-	case compSize := <-compSizeChan:
-		d.currentDataPageHeader.CompressedPageSize += uint64(compSize)
-	case err := <-d.flushErrChan:
+	if n, err := d.source.Write(d.logsBuffer.Bytes()); err != nil {
+		// reshaping the buffer
+		d.logsBuffer = bytes.NewBuffer(d.logsBuffer.Bytes()[n:])
 		return err
-	case <-time.After(30 * time.Second):
-		return errors.New("flush timeout")
 	}
-
+	// Reset the buffer
+	d.logsBuffer.Reset()
+	d.logger.Debugf("Flushed buffer to data file %s", d.source.Header)
 	return nil
 }
 
 // NewDataFileWriterFactory creates a new DefaultDataFileFactory
 func NewDataFileWriterFactory(baseDir string, codec ports.Serializer, compressorFactory ports.CompressionFactoryMethod, logger *logrus.Entry) ports.DataFileWriterFactory {
+	if err := os.MkdirAll(baseDir, 0700); err != nil {
+		panic(err)
+	}
 	return &DefaultDataFileFactory{
 		codec:             codec,
 		compressorFactory: compressorFactory,

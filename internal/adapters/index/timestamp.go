@@ -3,7 +3,12 @@ package index
 import (
 	"LogDb/internal/domain"
 	"LogDb/internal/ports"
-	"github.com/google/uuid"
+	"fmt"
+	log "github.com/sirupsen/logrus"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -33,22 +38,23 @@ func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]*domain.DataFi
 	var files []*domain.DataFile
 	for _, dfs := range t.index {
 		// TODO: optimise search for the date range
-		for _, df := range dfs {
+		for _, dfHeader := range dfs {
 			// if the data file is not in the range of the query, skip it
-			if df.Time().Before(fromDateTime) || df.Time().After(toDateTime) {
+			if dfHeader.Time().Before(fromDateTime) || dfHeader.Time().After(toDateTime) {
 				continue
 			}
 			// This need to be check on exact datapage
 			// Check last data page number - aka minute number
-			//if df.LastDataPageNumber < uint32(q.From.Hour()*60+q.From.Minute()) {
+			//if dfHeader.LastDataPageNumber < uint32(q.From.Hour()*60+q.From.Minute()) {
 			//	continue
 			//}
 			// Check first data page number - aka minute number
 			// TODO: implement FirstDataPageNumber as not not in protocol
-			//if df.FirstDataPageNumber > uint32(q.To.Hour()*60+q.To.Minute()) {
+			//if dfHeader.FirstDataPageNumber > uint32(q.To.Hour()*60+q.To.Minute()) {
 			//	continue
 			//}
-			fh, err := t.storage.GetDataFile(df.String())
+			fh, err := domain.NewReadOnlyDataFile(dfHeader, path.Join(t.baseDir, dfHeader.String()))
+			// read file header
 			if err != nil {
 				return nil, err
 			}
@@ -56,25 +62,6 @@ func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]*domain.DataFi
 		}
 	}
 	return files, nil
-}
-
-func (t *Timestamp) GetDataFileForWrite(record *domain.LogRecord) (*domain.DataFile, bool, error) {
-	var df *domain.DataFile
-	var err error
-	dfh, exist := t.GetDataFile(record.Timestamp)
-	if !exist {
-		dfh = &domain.DataFileHeader{
-			Version: 1,
-			Id:      uuid.New().ID(),
-			Year:    uint64(record.Timestamp.Year()),
-			Month:   uint64(record.Timestamp.Month()),
-			Day:     uint64(record.Timestamp.Day()),
-		}
-		df, err = t.storage.CreateDataFile(dfh.String(), dfh.Id, dfh.Year, dfh.Month, dfh.Day)
-	} else {
-		df, err = t.storage.GetDataFile(dfh.String())
-	}
-	return df, !exist, err
 }
 
 // NewTimestamp creates a new Timestamp index.
@@ -94,14 +81,34 @@ func (t *Timestamp) BindStorage(storage ports.DataStorage) error {
 
 // load loads the index from the data storage.
 func (t *Timestamp) load() error {
-	// Iterate over the data storage and load the index
-	headers, err := t.storage.GetDataFilesHeaders()
+	// Discover data files via glob pattern
+	log.Debugf("Loading data files from directory: %s", t.baseDir)
+	files, err := fs.Glob(os.DirFS(t.baseDir), "*.chunk")
 	if err != nil {
 		return err
 	}
-	for _, header := range headers {
-		t.AddDataFile(header)
+
+	// Iterate over each discovered file
+	for _, file := range files {
+		// Construct the full path for each file
+		fullPath := filepath.Join(t.baseDir, file)
+		log.Debugf("Loading data file to index: %s", fullPath)
+		// Create a read-only data file from the header and path
+		dataFile, err := domain.NewReadOnlyDataFile(domain.NewEmptyDataFileHeader(), fullPath)
+		if err != nil {
+			return err
+		}
+		// Read and process the file header
+		if _, err := t.codec.ReadFileHeader(dataFile.Header, dataFile.File); err != nil {
+			return fmt.Errorf("failed to read header for file %s: %w", file, err)
+		}
+
+		// Add the data file to the timestamp index
+		if err := t.AddDataFile(dataFile.Header); err != nil {
+			return fmt.Errorf("failed to add data file header to index for file %s: %w", file, err)
+		}
 	}
+
 	return nil
 }
 

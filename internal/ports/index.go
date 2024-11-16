@@ -10,5 +10,4 @@ type Index interface {
 	DeleteDataFile(df *domain.DataFileHeader) error
 
 	GetDataFilesForRead(q PreparedQuery) ([]*domain.DataFile, error)
-	GetDataFileForWrite(record *domain.LogRecord) (*domain.DataFile, bool, error)
 }
