@@ -37,6 +37,13 @@ func NewEmptyDataPageHeader() *DataPageHeader {
 	return &DataPageHeader{}
 }
 
+// NewDataPageHeaderForMinute creates a new DataPageHeader.
+func NewDataPageHeaderForMinute(number uint32) *DataPageHeader {
+	return &DataPageHeader{
+		Number: number,
+	}
+}
+
 type DataPage struct {
 	Header *DataPageHeader
 	io.ReadWriteSeeker

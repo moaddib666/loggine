@@ -9,10 +9,10 @@ type LogChunk struct {
 }
 
 type LogRecord struct {
-	Timestamp     time.Time
-	SchemaVersion uint64
-	Labels        []Label
-	Message       []byte
+	Timestamp     time.Time `json:"timestamp"`
+	SchemaVersion uint64    `json:"schema_version"`
+	Labels        []Label   `json:"labels"`
+	Message       []byte    `json:"message"`
 }
 
 // NewEmptyLogRecord creates a new LogRecord with the current time
