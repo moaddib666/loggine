@@ -62,8 +62,8 @@ type DataStorage interface {
 	Close() error
 }
 
-// DataFileManager defines the operations for managing data files and pages.
-type DataFileManager interface {
+// DataFileReader defines the operations for managing data files and pages.
+type DataFileReader interface {
 
 	// GetHeader retrieves and returns the data file header from the data source, caching it in memory
 	GetHeader() (*domain.DataFileHeader, error)
@@ -91,8 +91,8 @@ type DataFileManager interface {
 
 // DataFileManagerFactory defines the operations for creating data file managers
 type DataFileManagerFactory interface {
-	NewDataFileManager(fileName string) (DataFileManager, error)
-	FromDataFile(df *domain.DataFile) DataFileManager
+	NewDataFileManager(fileName string) (DataFileReader, error)
+	FromDataFile(df *domain.DataFile) DataFileReader
 }
 
 // DataPageReaderInterface defines the interface for reading records from a data page.
@@ -106,4 +106,29 @@ type DataPageReader interface {
 // DataPagerReaderFactory defines the operations for creating data page readers
 type DataPageReaderFactory interface {
 	NewDataPageReader(header *domain.DataPageHeader, reader io.ReadSeeker) DataPageReader
+}
+
+// DataFileWriter defines the operations for writing data to a data file
+type DataFileWriter interface {
+	// Open opens the data file for writing
+	Open(basedir, fileName string) error
+	//// Create creates a new data file with the given ID and date
+	Create(basedir string, id uint32, y, m, day uint64) error
+
+	// Close flushes any remaining data and closes the file
+	Close() error
+
+	// CreateDataPage creates a new data page in the data file
+	CreateDataPage(pageNumber uint32) error
+
+	// WriteLogRecord writes a log record to the current data page
+	WriteLogRecord(record *domain.LogRecord) error
+}
+
+// DataFileWriterFactory defines the operations for creating data page writers
+// TODO: think about separate data page writer and data file writer
+type DataFileWriterFactory interface {
+	New() DataFileWriter
+	Create(id uint32, y, m, day uint64) (DataFileWriter, error)
+	Open(fileName string) (DataFileWriter, error)
 }

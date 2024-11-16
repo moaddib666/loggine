@@ -9,44 +9,7 @@ import (
 	"os"
 )
 
-//type dataPageReaderWithCallback struct {
-//	reader io.ReadSeeker
-//	inc    func(n int64)
-//	set    func(m int64)
-//	closed bool
-//}
-//
-//func (d *dataPageReaderWithCallback) Read(p []byte) (n int, err error) {
-//	if d.closed {
-//		return 0, io.EOF
-//	}
-//	n, err = d.reader.Read(p)
-//	d.inc(int64(n))
-//	return n, err
-//}
-//
-//func (d *dataPageReaderWithCallback) Seek(offset int64, whence int) (int64, error) {
-//	ret, err := d.reader.Seek(offset, whence)
-//	d.set(ret)
-//	return ret, err
-//}
-//
-//func (d *dataPageReaderWithCallback) Close() error {
-//	if d.closed {
-//		return nil
-//	}
-//	d.closed = true
-//	return nil
-//}
-
-// newDataReaderWithCallback creates a new dataPageReaderWithCallback
-//func newDataReaderWithCallback(reader io.ReadSeeker, inc, set func(n int64)) io.ReadSeekCloser {
-//	return &dataPageReaderWithCallback{
-//		reader: reader,
-//		inc:    inc,
-//		set:    set,
-//	}
-//}
+var _ ports.DataFileReader = &DataFileReader{}
 
 type DataFileReader struct {
 	source                    *domain.DataFile
@@ -55,36 +18,6 @@ type DataFileReader struct {
 	currentDataPageReader     io.ReadSeeker
 	codec                     ports.Serializer
 	logger                    *logrus.Entry // Use logger for debug logs
-}
-
-// incrementNumberOfDataPageBytesRead increments the number of bytes read from the data page
-//func (d *DataFileReader) incrementNumberOfDataPageBytesRead(n int64) {
-//	d.numberOfDataPageBytesRead += n
-//}
-
-// setNumberOfDataPageBytesRead sets the number of bytes read from the data page
-//func (d *DataFileReader) setNumberOfDataPageBytesRead(n int64) {
-//	d.numberOfDataPageBytesRead = n
-//}
-
-// writeHeader writes data file header to the writer
-func (d *DataFileReader) writeHeader() error {
-	d.logger.Debugf("Seeking to the start of the file to write the header.")
-	ret, err := d.source.Seek(0, io.SeekStart)
-	d.logger.Debugf("Seek operation: Seek(0, SeekStart) returned position %d, error: %v", ret, err)
-	if err != nil {
-		return err
-	}
-	if _, err := d.codec.WriteFileHeader(d.source.Header, d.source); err != nil {
-		return err
-	}
-	d.logger.Debugf("File header written. Seeking back to position: %d", ret)
-	ret, err = d.source.Seek(ret, io.SeekStart)
-	d.logger.Debugf("Seek operation: Seek(%d, SeekStart) returned position %d, error: %v", ret, ret, err)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // GetHeader returns the data file header read from disk and cached in memory
@@ -263,14 +196,14 @@ func (d *DataFileReader) Close() error {
 	return d.source.Close()
 }
 
-// DataFileManagerFactory creates a new DataFileReader
-type DataFileManagerFactory struct {
+// DataFileReaderFactory creates a new DataFileReader
+type DataFileReaderFactory struct {
 	Codec  ports.Serializer
 	logger *logrus.Entry
 }
 
 // NewDataFileManager creates a new DataFileReader
-func (d *DataFileManagerFactory) NewDataFileManager(fileName string) (ports.DataFileManager, error) {
+func (d *DataFileReaderFactory) NewDataFileManager(fileName string) (ports.DataFileReader, error) {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
@@ -286,7 +219,7 @@ func (d *DataFileManagerFactory) NewDataFileManager(fileName string) (ports.Data
 }
 
 // FromDataFile creates a new DataFileReader from a DataFile
-func (d *DataFileManagerFactory) FromDataFile(df *domain.DataFile) ports.DataFileManager {
+func (d *DataFileReaderFactory) FromDataFile(df *domain.DataFile) ports.DataFileReader {
 	return &DataFileReader{
 		source: df,
 		codec:  d.Codec,
@@ -294,10 +227,10 @@ func (d *DataFileManagerFactory) FromDataFile(df *domain.DataFile) ports.DataFil
 	}
 }
 
-// NewDataFileManagerFactory creates a new DataFileManagerFactory
-func NewDataFileManagerFactory(codec ports.Serializer) *DataFileManagerFactory {
+// NewDataFileManagerFactory creates a new DataFileReaderFactory
+func NewDataFileManagerFactory(codec ports.Serializer) *DataFileReaderFactory {
 	logger := logrus.WithField("component", "DataFileReader")
-	return &DataFileManagerFactory{
+	return &DataFileReaderFactory{
 		Codec:  codec,
 		logger: logger,
 	}
