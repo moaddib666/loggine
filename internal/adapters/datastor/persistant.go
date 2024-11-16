@@ -64,7 +64,7 @@ func NewPersistentStorage(baseDir string, codec ports.Serializer, primaryIndex p
 			Mutex:    sync.Mutex{},
 		},
 		dataFileManagerFactory: NewDataFileManagerFactory(codec),
-		dataPageReaderFactory:  NewDataPageReaderFactory(codec, domain.SmallChunks), // Fixme: make posible to set chunk size or determine depends on avg data page size
+		dataPageReaderFactory:  NewDataPageReaderFactory(codec, domain.SmallChunks), // Fixme: make possible to set chunk size or determine depends on avg data page size
 		fileExt:                defaultFileExt,
 	}
 	stor.initIndexes()
@@ -413,7 +413,7 @@ func (p *PersistentStorage) StoreLogRecord(record *domain.LogRecord) error {
 	p.writeCursor.DataPage.Header.RecordCount++
 	p.writeCursor.DataFile.Header.LastDataPageNumber = record.DataPageNumber()
 	p.writeCursor.DataFile.Header.RecordCount++
-	return nil
+	return p.updateDataFileHeader(p.writeCursor.DataFile)
 }
 
 // Query queries the log records in the persistent storage
