@@ -6,11 +6,11 @@ import (
 )
 
 type QueryReport struct {
-	Id           uuid.UUID
-	ScannedItems int
-	Miss         int
-	Hits         int
-	ElapsedTime  time.Duration
+	Id           uuid.UUID     `json:"id"`
+	ScannedItems int           `json:"scanned_items"`
+	Miss         int           `json:"miss"`
+	Hits         int           `json:"hits"`
+	ElapsedTime  time.Duration `json:"elapsed_time"`
 }
 
 // NewQueryReport creates a new query_types report with the given ID and count.
