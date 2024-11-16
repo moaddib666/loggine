@@ -16,4 +16,4 @@ type Compression interface {
 	DecompressStream(reader io.Reader, writer io.Writer) (int64, error)
 }
 
-type CompressionFactoryMethod func(compressorType compression_types.CompressionType) (Compression, error)
+type CompressionFactoryMethod func(compressorType compression_types.CompressionType) Compression
