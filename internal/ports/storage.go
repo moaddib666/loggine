@@ -116,6 +116,7 @@ type DataPageReader interface {
 	Metadata() *domain.RecordMeta
 	Labels() ([]domain.Label, error)
 	Message() ([]byte, error)
+	Record() (*domain.LogRecord, error)
 }
 
 // DataPagerReaderFactory defines the operations for creating data page readers
@@ -148,4 +149,11 @@ type DataFileWriterFactory interface {
 	New() (DataFileWriter, error)
 	Create(id uint32, y, m, day uint64) (DataFileWriter, error)
 	Open(fileName string) (DataFileWriter, error)
+	FromDataFile(df *domain.DataFile) (DataFileWriter, error)
+}
+
+// DataFileRepository defines the operations for managing data files and pages.
+type DataFileRepository interface {
+	// Open opens the data file for reading and writing
+	Open(fileName string) (*domain.DataFile, error)
 }
