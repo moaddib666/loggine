@@ -56,3 +56,16 @@ func NewDataPage(header *DataPageHeader, reader io.ReadWriteSeeker) *DataPage {
 		ReadWriteSeeker: reader,
 	}
 }
+
+type ReadOnlyDataPage struct {
+	Header *DataPageHeader
+	io.ReadSeeker
+}
+
+// NewReadOnlyDataPage creates a new ReadOnlyDataPage.
+func NewReadOnlyDataPage(header *DataPageHeader, reader io.ReadSeeker) *ReadOnlyDataPage {
+	return &ReadOnlyDataPage{
+		Header:     header,
+		ReadSeeker: reader,
+	}
+}
