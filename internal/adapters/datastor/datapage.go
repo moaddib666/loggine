@@ -143,6 +143,26 @@ func (dpr *DataPageReader) Message() ([]byte, error) {
 	return dpr.recordMessage, nil
 }
 
+// Record returns the current record.
+func (dpr *DataPageReader) Record() (*domain.LogRecord, error) {
+	labels, err := dpr.Labels()
+	if err != nil {
+		return nil, err
+	}
+	message, err := dpr.Message()
+	if err != nil {
+		return nil, err
+	}
+	ts := time.Unix(int64(dpr.recordMetadata.Timestamp), 0)
+	version := dpr.recordMetadata.SchemaVersion
+	return &domain.LogRecord{
+		Timestamp:     ts,
+		SchemaVersion: version,
+		Labels:        labels,
+		Message:       message,
+	}, nil
+}
+
 // dataPageReaderFactory is a concrete implementation of DataPageReaderFactory
 type dataPageReaderFactory struct {
 	codec    ports.Serializer

@@ -31,6 +31,11 @@ func (f *DefaultDataFileFactory) constructDataFileLocation(name string) string {
 
 }
 
+// FromDataFileHeader creates a new DataFileWriter from a DataFile
+func (f *DefaultDataFileFactory) FromDataFile(dataFile *domain.DataFile) (ports.DataFileWriter, error) {
+	return NewDataFileWriter(dataFile, f.codec, f.logger), nil
+}
+
 // New creates a new instance of DataFileWriter
 func (f *DefaultDataFileFactory) New() (ports.DataFileWriter, error) {
 	dataFileHeader := domain.NewEmptyDataFileHeader()

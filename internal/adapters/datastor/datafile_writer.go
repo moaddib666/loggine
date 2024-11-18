@@ -161,6 +161,10 @@ func (d *DataFileWriter) AppendDataPage(header *domain.DataPageHeader) error {
 	// Create a new data page header
 	d.currentDataPageHeader = header
 	d.source.Header.LastDataPageNumber = header.Number
+	// FIXME: looks like i need kind of a flag to indicate that the data page is empty
+	if d.source.Header.RecordCount == 0 {
+		d.source.Header.FirstDataPageNumber = header.Number
+	}
 
 	// Write 00 size of DataPageHeader to the file
 	if _, err := d.codec.WriteDataPageHeader(header, d.source); err != nil {
