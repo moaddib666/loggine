@@ -3,7 +3,6 @@ package datastor
 import (
 	"LogDb/internal/domain"
 	"LogDb/internal/ports"
-	"github.com/google/uuid"
 	"time"
 )
 
@@ -98,7 +97,7 @@ func (s *SequentialLogCollector) StoreLogRecord(record *domain.LogRecord) error 
 				return err
 			}
 		}
-		if dfw, err := s.dff.Create(uuid.New().ID(), uint64(record.Timestamp.Year()), uint64(record.Timestamp.Month()), uint64(record.Timestamp.Day())); err != nil {
+		if dfw, err := s.dff.Create(uint64(record.Timestamp.Year()), uint64(record.Timestamp.Month()), uint64(record.Timestamp.Day())); err != nil {
 			return err
 		} else {
 			s.dfw = dfw

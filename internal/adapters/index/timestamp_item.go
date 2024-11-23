@@ -9,8 +9,40 @@ import (
 )
 
 type operation struct {
-	done     bool
-	callback func()
+	dfh         *domain.DataFileHeader
+	df          *domain.DataFile
+	constructor func(header *domain.DataFileHeader, path string) (*domain.DataFile, error)
+	done        bool
+	callback    func()
+}
+
+func (o *operation) GetDataFileHeader() *domain.DataFileHeader {
+	return o.dfh
+}
+
+func (o *operation) GetDataFile(path string) (*domain.DataFile, error) {
+	if o.done {
+		return nil, errors.New("operation already done")
+	}
+	return o.constructor(o.dfh, path)
+}
+
+// newReadOperation creates a new read operation.
+func newReadOperation(dfh *domain.DataFileHeader, callback func()) ports.IndexOperation {
+	return &operation{
+		dfh:         dfh,
+		constructor: domain.NewReadOnlyDataFile,
+		callback:    callback,
+	}
+}
+
+// newWriteOperation creates a new write operation.
+func newWriteOperation(dfh *domain.DataFileHeader, callback func()) ports.IndexOperation {
+	return &operation{
+		dfh:         dfh,
+		constructor: domain.NewWriteOnlyDataFile,
+		callback:    callback,
+	}
 }
 
 // Done marks the operation as done.
@@ -21,6 +53,9 @@ func (o *operation) Done() error {
 	o.done = true
 	if o.callback != nil {
 		o.callback()
+	}
+	if o.df != nil {
+		_ = o.df.Close()
 	}
 	return nil
 }
@@ -43,9 +78,7 @@ func (p *PrimaryIndexItem) RequestReadAccess() (ports.IndexOperation, error) {
 		return nil, errors.New("write operation is in progress")
 	}
 	p.readOperations.Add(1)
-	return &operation{
-		callback: p.onReadOperationDone,
-	}, nil
+	return newReadOperation(p.header, p.onReadOperationDone), nil
 }
 
 // onReadOperationDone decrements the number of read operations.
@@ -69,9 +102,7 @@ func (p *PrimaryIndexItem) RequestWriteAccess() (ports.IndexOperation, error) {
 	if !p.writeLock.CompareAndSwap(false, true) {
 		return nil, errors.New("write operation is already in progress")
 	}
-	return &operation{
-		callback: p.onWriteOperationDone,
-	}, nil
+	return newWriteOperation(p.header, p.onWriteOperationDone), nil
 }
 
 // AwaitReadAccess waits until no write operation is in progress, then allows read access.
@@ -83,9 +114,7 @@ func (p *PrimaryIndexItem) AwaitReadAccess() (ports.IndexOperation, error) {
 		time.Sleep(10 * time.Millisecond) // Short sleep for efficient backoff
 	}
 	p.readOperations.Add(1)
-	return &operation{
-		callback: p.onReadOperationDone,
-	}, nil
+	return newReadOperation(p.header, p.onReadOperationDone), nil
 }
 
 // AwaitWriteAccess waits until no read or write operations are in progress, then allows write access.
@@ -96,7 +125,12 @@ func (p *PrimaryIndexItem) AwaitWriteAccess() (ports.IndexOperation, error) {
 		}
 		time.Sleep(10 * time.Millisecond) // Short sleep for efficient backoff
 	}
-	return &operation{
-		callback: p.onWriteOperationDone,
-	}, nil
+	return newWriteOperation(p.header, p.onWriteOperationDone), nil
+}
+
+// NewIndexItem creates a new primary index item.
+func NewIndexItem(header *domain.DataFileHeader) ports.IndexItem {
+	return &PrimaryIndexItem{
+		header: header,
+	}
 }

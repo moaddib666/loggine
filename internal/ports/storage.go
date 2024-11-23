@@ -72,7 +72,7 @@ type DataStorage interface {
 
 	Query(query PreparedQuery) (*domain.QueryResult, error)
 
-	GetFileExt() string
+	//GetFileExt() string
 
 	Close() error
 }
@@ -108,6 +108,7 @@ type DataFileReader interface {
 type DataFileReaderFactory interface {
 	NewDataFileManager(fileName string) (DataFileReader, error)
 	FromDataFile(df *domain.DataFile) DataFileReader
+	FromDataFileHeader(dfh *domain.DataFileHeader) DataFileReader
 }
 
 // DataPageReaderInterface defines the interface for reading records from a data page.
@@ -146,8 +147,8 @@ type DataPageHeaderFactory interface {
 
 // DataFileWriterFactory defines the operations for creating data page writers
 type DataFileWriterFactory interface {
-	New() (DataFileWriter, error)
-	Create(id uint32, y, m, day uint64) (DataFileWriter, error)
+	//New() (DataFileWriter, error)
+	Create(y, m, day uint64) (DataFileWriter, error)
 	Open(fileName string) (DataFileWriter, error)
 	FromDataFile(df *domain.DataFile) (DataFileWriter, error)
 }
@@ -156,4 +157,14 @@ type DataFileWriterFactory interface {
 type DataFileRepository interface {
 	// Open opens the data file for reading and writing
 	Open(fileName string) (*domain.DataFile, error)
+	// Create creates a new data file in the repository
+	Create(y, m, day uint64) (*domain.DataFile, error)
+	// Codec returns the codec used by the repository
+	Codec() Serializer
+	// FileExtension GetFileExtension returns the file extension used by the repository
+	FileExtension() string
+	// BasePath returns the base path used by the repository
+	BasePath() string
+	// ListAvailable returns the list of available files in the repository
+	ListAvailable() ([]*domain.DataFileHeader, error)
 }

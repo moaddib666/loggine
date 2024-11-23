@@ -9,16 +9,18 @@ type Index interface {
 	AddDataFile(df *domain.DataFileHeader) error
 	DeleteDataFile(df *domain.DataFileHeader) error
 
-	GetDataFilesForRead(q PreparedQuery) ([]*domain.DataFile, error)
+	GetDataFilesForRead(q PreparedQuery) ([]IndexOperation, error)
 }
 
 // IndexOperation defines the interface for an index operation.
 type IndexOperation interface {
-	Done() error
+	GetDataFileHeader() *domain.DataFileHeader         // Cheap operation get data file header from memory
+	GetDataFile(path string) (*domain.DataFile, error) // Expensive operation get data file from disk
+	Done() error                                       // Marks the operation as done
 }
 
-// PrimaryIndex defines the interface for a primary index item.
-type PrimaryIndex interface {
+// IndexItem defines the interface for a primary index item.
+type IndexItem interface {
 	// GetHeader returns the header of the index.
 	GetHeader() *domain.DataFileHeader
 

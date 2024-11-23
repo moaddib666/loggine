@@ -6,7 +6,6 @@ import (
 	"LogDb/internal/ports"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -16,8 +15,8 @@ var _ ports.DataStorage = new(PersistentStorage)
 
 type PersistentStorage struct {
 	// File system
-	baseDir string
-	fileExt string
+	//baseDir string
+	//fileExt string
 
 	// Indexes
 	primaryIndex ports.Index
@@ -32,28 +31,22 @@ type PersistentStorage struct {
 }
 
 // NewPersistentStorage creates a new persistent storage
-func NewPersistentStorage(baseDir string, codec ports.Serializer, memTable ports.MemTable, primaryIndex ports.Index, indexes ...ports.Index) *PersistentStorage {
-	// create base dir if not exist
-	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
-		panic(err)
-	}
-	stor := &PersistentStorage{
-		baseDir:                baseDir,
+func NewPersistentStorage(repo ports.DataFileRepository, memTable ports.MemTable, primaryIndex ports.Index, indexes ...ports.Index) *PersistentStorage {
+	storage := &PersistentStorage{
 		primaryIndex:           primaryIndex,
 		indexes:                indexes,
 		memTable:               memTable,
-		dataFileManagerFactory: NewDataFileManagerFactory(codec),
-		dataPageReaderFactory:  NewDataPageReaderFactory(codec, domain.SmallChunks), // Fixme: make possible to set chunk size or determine depends on avg data page size
-		fileExt:                defaultFileExt,
+		dataFileManagerFactory: NewDataFileManagerFactory(repo),
+		dataPageReaderFactory:  NewDataPageReaderFactory(repo.Codec(), domain.SmallChunks), // Fixme: make possible to set chunk size or determine depends on avg data page size
 	}
-	stor.initIndexes()
-	return stor
+	storage.initIndexes()
+	return storage
 }
 
 // GetFileExt returns the file extension
-func (p *PersistentStorage) GetFileExt() string {
-	return p.fileExt
-}
+//func (p *PersistentStorage) GetFileExt() string {
+//	return defaultFileExt
+//}
 
 // iniIndexes initializes the indexes
 func (p *PersistentStorage) initIndexes() {
@@ -119,7 +112,7 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 	// Query the primary index
 	query.Begin()
 	defer query.End()
-	dataFiles, err := p.primaryIndex.GetDataFilesForRead(query)
+	idxOperations, err := p.primaryIndex.GetDataFilesForRead(query)
 	if err != nil {
 		query.SetError(fmt.Errorf("failed to query primary index: %w", err))
 		return query.Result()
@@ -127,15 +120,13 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 	// Query the secondary indexes if any
 
 	// Iterate over the data files
-	for _, df := range dataFiles {
-		dataFileManager := p.dataFileManagerFactory.FromDataFile(df)
-		defer dataFileManager.Close()
-
-		_, err := dataFileManager.GetHeader()
+	for _, df := range idxOperations {
+		dataFileManager, err := p.dataFileManagerFactory.NewDataFileManager(df.GetDataFileHeader().String())
 		if err != nil {
 			query.SetError(fmt.Errorf("failed to get data file header: %w", err))
 			return query.Result()
 		}
+		defer dataFileManager.Close()
 		for {
 			dataPageHeader, err := dataFileManager.NextDataPage()
 			if err != nil {
@@ -174,7 +165,11 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 					Message:       message,
 					Timestamp:     time.Unix(int64(meta.Timestamp), 0),
 				}
-				query.Next(logRecord)
+				err = query.Next(logRecord)
+				if err != nil {
+					query.SetError(fmt.Errorf("failed to process record: %w", err))
+					break
+				}
 			}
 		}
 

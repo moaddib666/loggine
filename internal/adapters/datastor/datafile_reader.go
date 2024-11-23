@@ -6,7 +6,6 @@ import (
 	"LogDb/internal/ports"
 	"github.com/sirupsen/logrus"
 	"io"
-	"os"
 )
 
 var _ ports.DataFileReader = &DataFileReader{}
@@ -198,40 +197,39 @@ func (d *DataFileReader) Close() error {
 
 // DataFileReaderFactory creates a new DataFileReader
 type DataFileReaderFactory struct {
-	Codec  ports.Serializer
 	logger *logrus.Entry
+	repo   ports.DataFileRepository
 }
 
 // NewDataFileManager creates a new DataFileReader
 func (d *DataFileReaderFactory) NewDataFileManager(fileName string) (ports.DataFileReader, error) {
-	f, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-	h := domain.NewEmptyDataFileHeader()
-	_, err = d.Codec.ReadFileHeader(h, f)
-	if err != nil {
-		return nil, err
-	}
+	df, err := d.repo.Open(fileName)
+	return d.FromDataFile(df), err
+}
 
-	return d.FromDataFile(domain.NewDataFile(h, f)), nil
-
+// FromDataFileHeader creates a new DataFileReader from a DataFileHeader
+func (d *DataFileReaderFactory) FromDataFileHeader(dfh *domain.DataFileHeader) ports.DataFileReader {
+	df, err := d.repo.Open(dfh.String())
+	if err != nil {
+		return nil
+	}
+	return d.FromDataFile(df)
 }
 
 // FromDataFile creates a new DataFileReader from a DataFile
 func (d *DataFileReaderFactory) FromDataFile(df *domain.DataFile) ports.DataFileReader {
 	return &DataFileReader{
 		source: df,
-		codec:  d.Codec,
+		codec:  d.repo.Codec(),
 		logger: d.logger,
 	}
 }
 
 // NewDataFileManagerFactory creates a new DataFileReaderFactory
-func NewDataFileManagerFactory(codec ports.Serializer) *DataFileReaderFactory {
+func NewDataFileManagerFactory(repo ports.DataFileRepository) *DataFileReaderFactory {
 	logger := logrus.WithField("component", "DataFileReader")
 	return &DataFileReaderFactory{
-		Codec:  codec,
+		repo:   repo,
 		logger: logger,
 	}
 }

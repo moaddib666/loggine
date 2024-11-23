@@ -316,7 +316,7 @@ func (h *V2Writer) flush() {
 			continue
 		}
 
-		dataFileWriter, err := h.dataFileFactory.Create(d.header.Id, d.header.Year, d.header.Month, d.header.Day)
+		dataFileWriter, err := h.dataFileFactory.Create(d.header.Year, d.header.Month, d.header.Day)
 		if err != nil {
 			return
 		}
@@ -353,7 +353,7 @@ func (h *V2Writer) flush() {
 			log.Debugf("Deleting MinuteHolder: %d", m.header.Number)
 			d.deleteMinuteHolder(m.header.Number)
 		}
-		//TODO: Close the DataFile and flush it notifying Index that new data is available
+		//TODO: Close the DataFile and flush it notifying IndexItem that new data is available
 		if d.IsEmpty() {
 			log.Debugf("DateHolder is empty, deleting it")
 			h.deleteDateHolder(d.header.Year, d.header.Month, d.header.Day)

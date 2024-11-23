@@ -5,10 +5,6 @@ import (
 	"LogDb/internal/ports"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"io/fs"
-	"os"
-	"path"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -22,24 +18,24 @@ import (
 // Use b-tree to build and store the index where leaf node are
 // Timestamp is a simplified in-memory index that stores log records by day (YYYY-MM-DD).
 type Timestamp struct {
-	codec   ports.Serializer
-	baseDir string
-	index   map[string][]*domain.DataFileHeader // A map of dates to data files
+	index   map[string][]ports.IndexItem // A map of dates to data files
 	mu      sync.Mutex
 	storage ports.DataStorage
+	repo    ports.DataFileRepository
 }
 
-func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]*domain.DataFile, error) {
+func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]ports.IndexOperation, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	fromDateTime := time.Unix(int64(q.FromDateTime()), 0)
 	toDateTime := time.Unix(int64(q.ToDateTime()), 0)
 
-	var files []*domain.DataFile
-	for _, dfs := range t.index {
+	var items []ports.IndexOperation
+	for _, idxItems := range t.index {
 		// TODO: optimise search for the date range
-		for _, dfHeader := range dfs {
+		for _, idxItem := range idxItems {
 			// if the data file is not in the range of the query, skip it
+			dfHeader := idxItem.GetHeader()
 			if dfHeader.Time().Before(fromDateTime) || dfHeader.Time().After(toDateTime) {
 				continue
 			}
@@ -53,23 +49,22 @@ func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]*domain.DataFi
 			//if dfHeader.FirstDataPageNumber > uint32(q.To.Hour()*60+q.To.Minute()) {
 			//	continue
 			//}
-			fh, err := domain.NewReadOnlyDataFile(dfHeader, path.Join(t.baseDir, dfHeader.String()))
-			// read file header
+			// Request read access to the data file
+			op, err := idxItem.RequestReadAccess()
 			if err != nil {
-				return nil, err
+				log.WithError(err).Errorf("Failed to request read access to data file %s", dfHeader)
 			}
-			files = append(files, fh)
+			items = append(items, op)
 		}
 	}
-	return files, nil
+	return items, nil
 }
 
 // NewTimestamp creates a new Timestamp index.
-func NewTimestamp(baseDir string, codec ports.Serializer) *Timestamp {
+func NewTimestamp(repo ports.DataFileRepository) *Timestamp {
 	return &Timestamp{
-		baseDir: baseDir,
-		codec:   codec,
-		index:   make(map[string][]*domain.DataFileHeader),
+		repo:  repo,
+		index: make(map[string][]ports.IndexItem),
 	}
 }
 
@@ -82,30 +77,15 @@ func (t *Timestamp) BindStorage(storage ports.DataStorage) error {
 // load loads the index from the data storage.
 func (t *Timestamp) load() error {
 	// Discover data files via glob pattern
-	log.Debugf("Loading data files from directory: %s", t.baseDir)
-	files, err := fs.Glob(os.DirFS(t.baseDir), "*.chunk")
+	files, err := t.repo.ListAvailable()
+
 	if err != nil {
 		return err
 	}
-
 	// Iterate over each discovered file
-	for _, file := range files {
-		// Construct the full path for each file
-		fullPath := filepath.Join(t.baseDir, file)
-		log.Debugf("Loading data file to index: %s", fullPath)
-		// Create a read-only data file from the header and path
-		dataFile, err := domain.NewReadOnlyDataFile(domain.NewEmptyDataFileHeader(), fullPath)
-		if err != nil {
-			return err
-		}
-		// Read and process the file header
-		if _, err := t.codec.ReadFileHeader(dataFile.Header, dataFile.File); err != nil {
-			return fmt.Errorf("failed to read header for file %s: %w", file, err)
-		}
-
-		// Add the data file to the timestamp index
-		if err := t.AddDataFile(dataFile.Header); err != nil {
-			return fmt.Errorf("failed to add data file header to index for file %s: %w", file, err)
+	for _, dataFileHeader := range files {
+		if err := t.AddDataFile(dataFileHeader); err != nil {
+			return fmt.Errorf("failed to add data file header to index for file %s: %w", dataFileHeader, err)
 		}
 	}
 
@@ -113,47 +93,50 @@ func (t *Timestamp) load() error {
 }
 
 // GetDataFile - returns the DataFileHeader for the given date
-func (t *Timestamp) GetDataFile(ts time.Time) (*domain.DataFileHeader, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	dataFiles, ok := t.index[ts.Format("2006-01-02")]
-	minute := uint32(ts.Hour()*60 + ts.Minute())
-	for _, df := range dataFiles {
-		if df.LastDataPageNumber > minute {
-			continue
-		}
-		if df.LastDataPageNumber <= minute {
-			return df, ok
-		}
-	}
-	return nil, false
-}
+//func (t *Timestamp) GetDataFile(ts time.Time) (*domain.DataFileHeader, bool) {
+//	t.mu.Lock()
+//	defer t.mu.Unlock()
+//
+//	idxItems, ok := t.index[ts.Format("2006-01-02")]
+//	minute := uint32(ts.Hour()*60 + ts.Minute())
+//	for _, df := range idxItems {
+//		if df.LastDataPageNumber > minute {
+//			continue
+//		}
+//		if df.LastDataPageNumber <= minute {
+//			return df, ok
+//		}
+//	}
+//	return nil, false
+//}
 
 // AddDataFile - adds a DataFileHeader to the index
-func (t *Timestamp) AddDataFile(df *domain.DataFileHeader) error {
+func (t *Timestamp) AddDataFile(header *domain.DataFileHeader) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if _, ok := t.index[df.Time().Format("2006-01-02")]; !ok {
-		t.index[df.Time().Format("2006-01-02")] = make([]*domain.DataFileHeader, 0)
+	if _, ok := t.index[header.Time().Format("2006-01-02")]; !ok {
+		t.index[header.Time().Format("2006-01-02")] = make([]ports.IndexItem, 0)
 	}
-	t.index[df.Time().Format("2006-01-02")] = append(t.index[df.Time().Format("2006-01-02")], df)
+	t.index[header.Time().Format("2006-01-02")] = append(t.index[header.Time().Format("2006-01-02")], NewIndexItem(header))
 	return nil
 }
 
 // DeleteDataFile - deletes a DataFileHeader from the index
 func (t *Timestamp) DeleteDataFile(df *domain.DataFileHeader) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if _, ok := t.index[df.Time().Format("2006-01-02")]; !ok {
 		return nil
 	}
-	for i, d := range t.index[df.Time().Format("2006-01-02")] {
-		if d.Id == df.Id {
+	for i, idxItem := range t.index[df.Time().Format("2006-01-02")] {
+		if idxItem.GetHeader().Id == df.Id {
+			op, err := idxItem.AwaitWriteAccess()
+			if err != nil {
+				return err
+			}
+			t.mu.Lock()
 			t.index[df.Time().Format("2006-01-02")] = append(t.index[df.Time().Format("2006-01-02")][:i], t.index[df.Time().Format("2006-01-02")][i+1:]...)
-			return nil
+			t.mu.Unlock()
+			return op.Done()
 		}
 	}
 	return nil

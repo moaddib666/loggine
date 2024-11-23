@@ -15,16 +15,25 @@ import (
 	log "github.com/sirupsen/logrus"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"os"
 	time2 "time"
 )
 
 const BaseDir = ".storage"
+const DataFileExt = "chunk"
+
+func init() {
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetOutput(os.Stdout)
+	log.SetLevel(log.DebugLevel)
+}
 
 func main() {
 	r := gin.Default()
 	codec := serializer.Default
-	idx := index.NewTimestamp(BaseDir, codec)
-	dataFileFactory := datastor.NewDataFileWriterFactory(".lsm", codec, compression.Factory, log.NewEntry(log.StandardLogger()))
+	repo := datastor.NewDataFileRepository(BaseDir, codec, DataFileExt)
+	idx := index.NewTimestamp(repo)
+	dataFileFactory := datastor.NewDataFileWriterFactory(repo, compression.Factory, log.NewEntry(log.StandardLogger()))
 	dataPageHeaderFactory := datastor.NewDataPageHeaderFactory()
 	sequentialWriter := datastor.NewSequentialLogCollectorFactory(
 		dataFileFactory,
@@ -36,7 +45,7 @@ func main() {
 		return memtable.NewHeapChunk(maxSize, maxRecords)
 	}, flusher, 60*time2.Second)
 
-	storage := datastor.NewPersistentStorage(BaseDir, codec, memTable, idx)
+	storage := datastor.NewPersistentStorage(repo, memTable, idx)
 	defer storage.Close()
 	queryBuilderFactory := query.NewQueryBuilderFactory()
 	queryProcessor := query.NewPreparer(filters.Factory, label_conditions.Factory)

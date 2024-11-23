@@ -9,7 +9,6 @@ import (
 	"errors"
 	"github.com/sirupsen/logrus"
 	"io"
-	"os"
 	"sync"
 	"time"
 )
@@ -217,17 +216,4 @@ func (d *DataFileWriter) flushBuffer() error {
 	d.logsBuffer.Reset()
 	d.logger.Debugf("Flushed buffer to data file %s", d.source.Header)
 	return nil
-}
-
-// NewDataFileWriterFactory creates a new DefaultDataFileFactory
-func NewDataFileWriterFactory(baseDir string, codec ports.Serializer, compressorFactory ports.CompressionFactoryMethod, logger *logrus.Entry) ports.DataFileWriterFactory {
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		panic(err)
-	}
-	return &DefaultDataFileFactory{
-		codec:             codec,
-		compressorFactory: compressorFactory,
-		logger:            logger,
-		baseDir:           baseDir,
-	}
 }
