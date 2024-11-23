@@ -6,6 +6,7 @@ import (
 	"LogDb/internal/ports"
 	ioutils "LogDb/pkg/utils/io"
 	"bytes"
+	"errors"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -75,16 +76,16 @@ func (m *Merger) MergeDataFiles(df1, df2 *domain.DataFile) (*domain.DataFile, er
 	}
 	if df1.Header.FirstDataPageNumber > df2.Header.LastDataPageNumber {
 		log.Debugf("Merging by appending %s to %s", df2.Header, df1.Header)
-		return m.safeAppendDataFile(df1, df2)
+		return m.safeAppendDataFile(df2, df1)
 	} else if df2.Header.FirstDataPageNumber > df1.Header.LastDataPageNumber {
 		log.Debugf("Merging by appending %s to %s", df1.Header, df2.Header)
-		return m.safeAppendDataFile(df2, df1)
+		return m.safeAppendDataFile(df1, df2)
 	} else if df1.Header.FirstDataPageNumber == df2.Header.LastDataPageNumber {
 		log.Debugf("Merging by appending with last page merged %s to %s", df2.Header, df1.Header)
-		return m.safeAppendDataFileWithLastPageMerged(df1, df2)
+		return m.safeAppendDataFileWithLastPageMerged(df2, df1)
 	} else if df2.Header.FirstDataPageNumber == df1.Header.LastDataPageNumber {
 		log.Debugf("Merging by appending with last page merged %s to %s", df1.Header, df2.Header)
-		return m.safeAppendDataFileWithLastPageMerged(df2, df1)
+		return m.safeAppendDataFileWithLastPageMerged(df1, df2)
 	} else {
 		log.Debugf("Merging by creating a new data file %s and %s", df1.Header, df2.Header)
 		return m.mergeToANewDataFile(df1, df2)
@@ -122,6 +123,17 @@ func (m *Merger) safeAppendDataFileWithLastPageMerged(target, source *domain.Dat
 		return nil, err
 	}
 
+	// Seek start of file to write the merged data page
+	if _, err := target.File.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	// Write the target data file header
+	newHeader := m.mergeDataFileHeaders(target, source, target.Header.Id)
+
+	// Write the new header to the target file
+	if _, err := m.codec.WriteFileHeader(newHeader, target); err != nil {
+		return nil, err
+	}
 	// Seek to the last data page start of the last file
 	if _, err := target.File.Seek(-int64(dph2.PageSize+uint64(domain.DataPageHeaderSize)), io.SeekEnd); err != nil {
 		return nil, err
@@ -131,7 +143,7 @@ func (m *Merger) safeAppendDataFileWithLastPageMerged(target, source *domain.Dat
 		return nil, err
 	}
 	// Seek df1 to the end of the first data page
-	if _, err := source.File.Seek(int64(domain.DataFileHeaderSize+domain.DataPageHeaderSize+int(dph1.PageSize)), io.SeekStart); err != nil {
+	if _, err := source.File.Seek(int64(domain.DataFileHeaderSize+domain.DataPageHeaderSize+int(dph2.PageSize)), io.SeekStart); err != nil {
 		return nil, err
 	}
 	return m.unsafeAppendDataFile(target, source)
@@ -140,8 +152,19 @@ func (m *Merger) safeAppendDataFileWithLastPageMerged(target, source *domain.Dat
 // safeAppendDataFile appends the data file to the target file.
 func (m *Merger) safeAppendDataFile(target,
 	source *domain.DataFile) (*domain.DataFile, error) {
+
 	// seek to header end of source file
 	if _, err := source.File.Seek(int64(domain.DataFileHeaderSize), io.SeekStart); err != nil {
+		return nil, err
+	}
+	// seek 0 of target file
+	if _, err := target.File.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	// Write new merged header
+	newHeader := m.mergeDataFileHeaders(target, source, target.Header.Id)
+	if _, err := m.codec.WriteFileHeader(newHeader, target); err != nil {
 		return nil, err
 	}
 	// seek end of target file
@@ -164,12 +187,11 @@ func (m *Merger) unsafeAppendDataFile(target,
 	return target, nil
 }
 
-// mergeToANewDataFile merges two data files into a new data file.
-func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFile, error) {
-	// Create a new data file header that combines df1 and df2
-	newHeader := &domain.DataFileHeader{
+// mergeDataFileHeaders merges two data file headers into a new data file header.
+func (m *Merger) mergeDataFileHeaders(df1, df2 *domain.DataFile, id uint32) *domain.DataFileHeader {
+	header := &domain.DataFileHeader{
 		Version:             df1.Header.Version,
-		Id:                  uuid.New().ID(),
+		Id:                  id,
 		RecordCount:         df1.Header.RecordCount + df2.Header.RecordCount,
 		Year:                df1.Header.Year,
 		Month:               df1.Header.Month,
@@ -177,7 +199,14 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 		LastDataPageNumber:  max(df1.Header.LastDataPageNumber, df2.Header.LastDataPageNumber),
 		FirstDataPageNumber: min(df1.Header.FirstDataPageNumber, df2.Header.FirstDataPageNumber),
 	}
-	newHeader.UpdateChecksum()
+	header.UpdateChecksum()
+	return header
+}
+
+// mergeToANewDataFile merges two data files into a new data file.
+func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFile, error) {
+	// Create a new data file header that combines df1 and df2
+	newHeader := m.mergeDataFileHeaders(df1, df2, uuid.New().ID())
 
 	// FIXME: DataFileRepository should be responsible for creating a new data file
 	dirOfDf1 := filepath.Dir(df1.File.Name())
@@ -199,7 +228,8 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 	// Create data file readers for df1 and df2
 	dfReader1 := m.dfReaderFactory.FromDataFile(df1)
 	dfReader2 := m.dfReaderFactory.FromDataFile(df2)
-
+	var dfReadPages1Count uint32 = 0
+	var dfReadPages2Count uint32 = 0
 	for {
 		// Select the data page from df1
 		dfReader1CurrentDataPageHeader, err := dfReader1.GetCurrentDataPageHeader()
@@ -227,14 +257,18 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 			if _, err := io.Copy(mergedDataFile, mergedDataPage); err != nil {
 				return nil, err
 			}
-
+			// TODO: refactor this
 			if _, err := dfReader1.NextDataPage(); err != nil {
-				return nil, err
+				if !errors.Is(err, internal_errors.NoDataPagesLeft) {
+					return nil, err
+				}
 			}
 			if _, err := dfReader2.NextDataPage(); err != nil {
-				return nil, err
+				if !errors.Is(err, internal_errors.NoDataPagesLeft) {
+					return nil, err
+				}
 			}
-		} else if dfReader1CurrentDataPageHeader.Number < dfReader2CurrentDataPageHeader.Number {
+		} else if dfReader1CurrentDataPageHeader.Number < dfReader2CurrentDataPageHeader.Number && dfReadPages1Count < dfReader1CurrentDataPageHeader.Number {
 			// workaround to avoid seek for header
 			_, _ = m.codec.WriteDataPageHeader(dfReader1CurrentDataPageHeader, mergedDataFile)
 			if _, err := io.Copy(mergedDataFile, dfReader1.GetDataPageReader()); err != nil {
@@ -243,7 +277,8 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 			if _, err := dfReader1.NextDataPage(); err != nil {
 				return nil, err
 			}
-		} else {
+			dfReadPages1Count++
+		} else if dfReadPages2Count < dfReader2CurrentDataPageHeader.Number {
 			// workaround to avoid seek for header
 			_, _ = m.codec.WriteDataPageHeader(dfReader2CurrentDataPageHeader, mergedDataFile)
 			if _, err := io.Copy(mergedDataFile, dfReader2.GetDataPageReader()); err != nil {
@@ -252,6 +287,7 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 			if _, err := dfReader2.NextDataPage(); err != nil {
 				return nil, err
 			}
+			dfReadPages2Count++
 		}
 		if mergedDataFile.Header.LastDataPageNumber == dfReader1CurrentDataPageHeader.Number ||
 			mergedDataFile.Header.LastDataPageNumber == dfReader2CurrentDataPageHeader.Number {
