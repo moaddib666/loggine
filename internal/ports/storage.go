@@ -137,6 +137,8 @@ type DataFileWriter interface {
 	AppendDataPage(*domain.DataPageHeader) error
 	// AppendLogRecordToCurrentDataPage appends a log record to the current data page
 	AppendLogRecordToCurrentDataPage(*domain.LogRecord) error
+	// Source returns the data file being written to
+	Source() *domain.DataFile
 }
 
 type DataPageHeaderFactory interface {

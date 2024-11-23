@@ -68,7 +68,7 @@ func (d *DataFileRepository) BasePath() string {
 	return d.basePath
 }
 
-// ListAvailableFiles returns the list of available files in the repository
+// ListAvailable returns the list of available files in the repository
 func (d *DataFileRepository) ListAvailable() ([]*domain.DataFileHeader, error) {
 	log.Debugf("Loading data files from directory: %s", d.basePath)
 	files, err := fs.Glob(os.DirFS(d.basePath), "*."+d.ext)

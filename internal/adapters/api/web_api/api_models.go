@@ -34,13 +34,14 @@ type SearchRequest struct {
 	FromTime           time.Time `json:"from_time"`
 	ToTime             time.Time `json:"to_time"`
 	ShardingKey        string    `json:"sharding_key"`
-	MessageMustContain string    `json:"message_contains"`
+	MessageMustContain string    `json:"message_contains,omitempty"`
 	Limit              int       `json:"limit"`
 }
 
 type SearchReport struct {
-	TotalRecords int     `json:"total_records"`
-	TimeTaken    float64 `json:"time_taken"`
+	TotalRecords   int     `json:"total_records"`
+	ScannedRecords int     `json:"scanned_records"`
+	TimeTaken      float64 `json:"time_taken"`
 }
 
 type SearchResult struct {

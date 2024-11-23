@@ -2,6 +2,7 @@ package main
 
 import (
 	"LogDb/internal/adapters/api/web_api"
+	"LogDb/internal/adapters/bus"
 	"LogDb/internal/adapters/compression"
 	"LogDb/internal/adapters/datastor"
 	"LogDb/internal/adapters/filters"
@@ -10,6 +11,7 @@ import (
 	"LogDb/internal/adapters/memtable"
 	"LogDb/internal/adapters/query"
 	"LogDb/internal/adapters/serializer"
+	"LogDb/internal/domain"
 	"LogDb/internal/ports"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -33,11 +35,18 @@ func main() {
 	codec := serializer.Default
 	repo := datastor.NewDataFileRepository(BaseDir, codec, DataFileExt)
 	idx := index.NewTimestamp(repo)
+	dataFilesChangesBus := bus.NewDataFilesManager()
+	dataFilesChangesBus.OnDataFileCreated(
+		func(header *domain.DataFileHeader) {
+			_ = idx.AddDataFile(header)
+		},
+	)
 	dataFileFactory := datastor.NewDataFileWriterFactory(repo, compression.Factory, log.NewEntry(log.StandardLogger()))
 	dataPageHeaderFactory := datastor.NewDataPageHeaderFactory()
 	sequentialWriter := datastor.NewSequentialLogCollectorFactory(
 		dataFileFactory,
 		dataPageHeaderFactory,
+		dataFilesChangesBus,
 	)
 	flusher := memtable.NewFlusher(sequentialWriter)
 	defer flusher.Close()

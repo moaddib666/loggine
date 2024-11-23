@@ -29,3 +29,29 @@ Content-Type: application/json
   "message_contains": "sample log",
   "sharding_key": "shard-01"
 }
+
+### Search All Records Request
+POST http://localhost:8080/api/v1/search/records
+Accept: application/json
+Content-Type: application/json
+
+{
+  "from_time": "2023-11-07T00:00:00Z",
+  "to_time": "2025-11-07T23:59:59Z",
+  "limit": 10,
+  "sharding_key": "shard-01"
+}
+
+### Search UdOSHZuYWRrZmtaWE16UlplZWpXUmh in Records Request
+POST http://localhost:8080/api/v1/search/records
+Accept: application/json
+Content-Type: application/json
+
+{
+  "from_time": "2024-11-22T00:00:00Z",
+  "to_time": "2024-11-22T23:00:00Z",
+  "limit": 100,
+  "message_contains": "UdOSHZuYWRrZmtaWE16UlplZWpXUmh",
+  "sharding_key": "shard-01"
+}
+

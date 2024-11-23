@@ -65,25 +65,28 @@ func (c *Cursor) IsAfterDataFile(t time.Time) bool {
 var _ ports.DataStorageWritable = &SequentialLogCollector{}
 
 type SequentialLogCollector struct {
-	dff    ports.DataFileWriterFactory
-	dpf    ports.DataPageHeaderFactory
-	dfw    ports.DataFileWriter
-	cursor *Cursor
+	dff        ports.DataFileWriterFactory
+	dpf        ports.DataPageHeaderFactory
+	dfw        ports.DataFileWriter
+	propagator ports.DataFilesChangesPropagator
+	cursor     *Cursor
 }
 
 // Close closes the data file writer
 func (s *SequentialLogCollector) Close() error {
 	if s.dfw != nil {
+		s.propagator.DataFileCreated(s.dfw.Source().Header)
 		return s.dfw.Close()
 	}
 	return nil
 }
 
-func NewSequentialLogCollector(dff ports.DataFileWriterFactory, dpf ports.DataPageHeaderFactory) *SequentialLogCollector {
+func NewSequentialLogCollector(dff ports.DataFileWriterFactory, dpf ports.DataPageHeaderFactory, propagator ports.DataFilesChangesPropagator) *SequentialLogCollector {
 	return &SequentialLogCollector{
-		dff:    dff,
-		dpf:    dpf,
-		cursor: NewCursor(),
+		dff:        dff,
+		dpf:        dpf,
+		cursor:     NewCursor(),
+		propagator: propagator,
 	}
 }
 
@@ -96,6 +99,7 @@ func (s *SequentialLogCollector) StoreLogRecord(record *domain.LogRecord) error 
 			if err := s.dfw.Close(); err != nil {
 				return err
 			}
+			s.propagator.DataFileCreated(s.dfw.Source().Header)
 		}
 		if dfw, err := s.dff.Create(uint64(record.Timestamp.Year()), uint64(record.Timestamp.Month()), uint64(record.Timestamp.Day())); err != nil {
 			return err

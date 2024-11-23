@@ -25,7 +25,9 @@ func (api *WebApi) SearchRecords(c *gin.Context) {
 	}
 
 	qb := api.queryBuilder.NewQueryBuilder()
-	qb.Where("message", query_types.Contains, request.MessageMustContain)
+	if request.ShardingKey != "" {
+		qb.Where("message", query_types.Contains, request.MessageMustContain)
+	}
 	qb.SetTimeRange(request.FromTime, request.ToTime)
 	qb.Limit(request.Limit)
 	query, err := qb.Build()
@@ -48,6 +50,7 @@ func (api *WebApi) SearchRecords(c *gin.Context) {
 	}
 	result.Records = api.recordTransformer.ToExternalBatch(queryResult.Records)
 	result.Report.TotalRecords = queryResult.Report.Hits
+	result.Report.ScannedRecords = queryResult.Report.ScannedItems
 	result.Report.TimeTaken = queryResult.Report.ElapsedTime.Seconds()
 	c.JSON(http.StatusOK, result)
 	return

@@ -217,3 +217,8 @@ func (d *DataFileWriter) flushBuffer() error {
 	d.logger.Debugf("Flushed buffer to data file %s", d.source.Header)
 	return nil
 }
+
+// Source returns the data file
+func (d *DataFileWriter) Source() *domain.DataFile {
+	return d.source
+}
