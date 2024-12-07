@@ -32,7 +32,7 @@ func (f *DefaultDataFileFactory) FromDataFile(dataFile *domain.DataFile) (ports.
 //// New creates a new instance of DataFileWriter
 //func (f *DefaultDataFileFactory) New() (ports.DataFileWriter, error) {
 //	dataFileHeader := domain.NewEmptyDataFileHeader()
-//	dataFile, err := domain.NewWriteOnlyDataFile(dataFileHeader, f.constructDataFileLocation(dataFileHeader.String()))
+//	dataFile, err := domain.NewWriteOnlyDataFile(dataFileHeader, f.GetDataFileFullPath(dataFileHeader.String()))
 //	if err != nil {
 //		f.logger.WithError(err).Error("failed to create data file")
 //		return nil, err

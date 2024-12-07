@@ -40,7 +40,7 @@ func newReadOperation(dfh *domain.DataFileHeader, callback func()) ports.IndexOp
 func newWriteOperation(dfh *domain.DataFileHeader, callback func()) ports.IndexOperation {
 	return &operation{
 		dfh:         dfh,
-		constructor: domain.NewWriteOnlyDataFile,
+		constructor: domain.NewReadWriteDataFile,
 		callback:    callback,
 	}
 }

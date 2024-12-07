@@ -112,7 +112,7 @@ func main() {
 	// Configure the worker pool size and total number of requests
 	workerCount := 1_000 // Adjust this based on desired parallelism
 	//totalRequests := 1_000_000
-	totalRequests := 100_000
+	totalRequests := 10_000_000
 
 	log.Infof("Starting E2E test with %d workers and %d total requests...", workerCount, totalRequests)
 

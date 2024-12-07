@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const defaultFileExt = ".chunk"
-
 var _ ports.DataStorage = new(PersistentStorage)
 
 type PersistentStorage struct {
@@ -31,13 +29,13 @@ type PersistentStorage struct {
 }
 
 // NewPersistentStorage creates a new persistent storage
-func NewPersistentStorage(repo ports.DataFileRepository, memTable ports.MemTable, primaryIndex ports.Index, indexes ...ports.Index) *PersistentStorage {
+func NewPersistentStorage(memTable ports.MemTable, dataFileManagerFactory ports.DataFileReaderFactory, dataPageReaderFactory ports.DataPageReaderFactory, primaryIndex ports.Index, indexes ...ports.Index) *PersistentStorage {
 	storage := &PersistentStorage{
 		primaryIndex:           primaryIndex,
 		indexes:                indexes,
 		memTable:               memTable,
-		dataFileManagerFactory: NewDataFileManagerFactory(repo),
-		dataPageReaderFactory:  NewDataPageReaderFactory(repo.Codec(), domain.SmallChunks), // Fixme: make possible to set chunk size or determine depends on avg data page size
+		dataFileManagerFactory: dataFileManagerFactory,
+		dataPageReaderFactory:  dataPageReaderFactory,
 	}
 	storage.initIndexes()
 	return storage
@@ -65,23 +63,23 @@ func (p *PersistentStorage) initIndexes() {
 }
 
 // deleteFromIndex deletes the data file from the indexes
-func (p *PersistentStorage) deleteFromIndex(df *domain.DataFileHeader) error {
-	// Delete from the primary index
-	err := p.primaryIndex.DeleteDataFile(df)
-	if err != nil {
-		return fmt.Errorf("failed to delete data file from primary index: %w", err)
-	}
-
-	// Delete from the secondary indexes
-	for _, index := range p.indexes {
-		err = index.DeleteDataFile(df)
-		if err != nil {
-			return fmt.Errorf("failed to delete data file from secondary index: %w", err)
-		}
-	}
-
-	return nil
-}
+//func (p *PersistentStorage) deleteFromIndex(df *domain.DataFileHeader) error {
+//	// Delete from the primary index
+//	err := p.primaryIndex.deleteDataFile(df)
+//	if err != nil {
+//		return fmt.Errorf("failed to delete data file from primary index: %w", err)
+//	}
+//
+//	// Delete from the secondary indexes
+//	for _, index := range p.indexes {
+//		err = index.deleteDataFile(df)
+//		if err != nil {
+//			return fmt.Errorf("failed to delete data file from secondary index: %w", err)
+//		}
+//	}
+//
+//	return nil
+//}
 
 // updateIndex updates the indexes with the new data file
 func (p *PersistentStorage) updateIndex(df *domain.DataFileHeader) error {

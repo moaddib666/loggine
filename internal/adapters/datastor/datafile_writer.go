@@ -35,7 +35,9 @@ func (d *DataFileWriter) sync() error {
 		return err
 	}
 	if err := d.flushCurrentDataPageHeader(); err != nil {
-		return err
+		if !errors.Is(err, internal_errors.DataPageNotSelected) {
+			return err
+		}
 	}
 	if err := d.flushDataFileHeader(); err != nil {
 		return err

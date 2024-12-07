@@ -24,10 +24,11 @@ func main() {
 	repo := datastor.NewSequentialLogCollector(dataFileFactory, dataPageHeaderFactory)
 	defer repo.Close()
 	recordWritten := 0
-	loader.LinearLogWriter(time.Now().Add(-(time.Hour * 24)), time.Now(), func(record *domain.LogRecord) error {
+	var offset = 3 * time.Hour
+	loader.LinearLogWriter(time.Now().Add(-(time.Hour*1 + offset)), time.Now().Add(-(offset)), func(record *domain.LogRecord) error {
 		//log.Debugf("Storing record timestamp %s", record.Timestamp)
 		recordWritten++
-		return repo.StoreRecord(record)
+		return repo.StoreLogRecord(record)
 	})
 	log.Infof("Wrote %d records", recordWritten)
 }

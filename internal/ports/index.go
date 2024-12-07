@@ -7,7 +7,7 @@ import (
 type Index interface {
 	BindStorage(storage DataStorage) error
 	AddDataFile(df *domain.DataFileHeader) error
-	DeleteDataFile(df *domain.DataFileHeader) error
+	//deleteDataFile(df *domain.DataFileHeader) error
 
 	GetDataFilesForRead(q PreparedQuery) ([]IndexOperation, error)
 }

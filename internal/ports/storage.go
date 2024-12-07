@@ -5,40 +5,6 @@ import (
 	"io"
 )
 
-//type DataFileRepository interface {
-//	Open(fileName string) error
-//	GetHeader() (*domain.DataFileHeader, error)
-//	Close() error
-//}
-
-//type DataPageRepositoryWriter interface {
-//	WriteLogRecord(record domain.LogRecord) error
-//}
-
-//type DataPageRepositoryReader interface {
-//	Query(filterSet FilterSet) (*domain.QueryResult, error)
-//}
-
-//type DataPageManager interface {
-//	AddLogRecord(record domain.LogRecord) error
-//	GetReader() Scanner
-//}
-
-//type Writer interface {
-//	WriteLogRecord(record domain.LogRecord) (int, error)
-//	Close() error
-//}
-
-//type Scanner interface {
-//	ScanLogRecord(filters FilterSet) (domain.LogRecord, int, error)
-//	ScannedRecordsCount() int
-//	Close() error
-//}
-
-//type ReaderFactory interface {
-//	NewReader() Scanner
-//}
-
 type LogTransformer interface {
 	ToString(record *domain.LogRecord) string
 	FromString(str string) *domain.LogRecord
@@ -149,7 +115,6 @@ type DataPageHeaderFactory interface {
 
 // DataFileWriterFactory defines the operations for creating data page writers
 type DataFileWriterFactory interface {
-	//New() (DataFileWriter, error)
 	Create(y, m, day uint64) (DataFileWriter, error)
 	Open(fileName string) (DataFileWriter, error)
 	FromDataFile(df *domain.DataFile) (DataFileWriter, error)
@@ -159,8 +124,12 @@ type DataFileWriterFactory interface {
 type DataFileRepository interface {
 	// Open opens the data file for reading and writing
 	Open(fileName string) (*domain.DataFile, error)
+	// GetDataFileFullPath constructs the full path to the data file by name without the extension
+	GetDataFileFullPath(name string) string
 	// Create creates a new data file in the repository
 	Create(y, m, day uint64) (*domain.DataFile, error)
+	// CreateFromHeader creates a new data file in the repository from a header
+	CreateFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error)
 	// Codec returns the codec used by the repository
 	Codec() Serializer
 	// FileExtension GetFileExtension returns the file extension used by the repository
@@ -169,4 +138,8 @@ type DataFileRepository interface {
 	BasePath() string
 	// ListAvailable returns the list of available files in the repository
 	ListAvailable() ([]*domain.DataFileHeader, error)
+	// Delete deletes a data file from the repository
+	Delete(fileName string) error
+	// DeleteByHeader deletes a data file from the repository by header
+	DeleteByHeader(header *domain.DataFileHeader) error
 }

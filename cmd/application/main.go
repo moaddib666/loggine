@@ -9,6 +9,8 @@ import (
 	"LogDb/internal/adapters/filters/label_conditions"
 	"LogDb/internal/adapters/index"
 	"LogDb/internal/adapters/memtable"
+	"LogDb/internal/adapters/merge"
+	"LogDb/internal/adapters/monitoring"
 	"LogDb/internal/adapters/query"
 	"LogDb/internal/adapters/serializer"
 	"LogDb/internal/domain"
@@ -31,18 +33,32 @@ func init() {
 }
 
 func main() {
+	prometheusExporter := monitoring.NewPrometheusAdapter()
+	prometheusExporter.StartHTTPServer("9090")
 	r := gin.Default()
 	codec := serializer.Default
 	repo := datastor.NewDataFileRepository(BaseDir, codec, DataFileExt)
-	idx := index.NewTimestamp(repo)
+	dataFileFactory := datastor.NewDataFileWriterFactory(repo, compression.Factory, log.NewEntry(log.StandardLogger()))
+	dataPageHeaderFactory := datastor.NewDataPageHeaderFactory()
+
+	dataFileManagerFactory := datastor.NewDataFileManagerFactory(repo)
+	dataPageReaderFactory := datastor.NewDataPageReaderFactory(repo.Codec(), domain.SmallChunks)
+
+	merger := merge.NewMerger(
+		dataFileFactory,
+		dataFileManagerFactory,
+		dataPageReaderFactory,
+		repo,
+	)
+
+	idx := index.NewTimestamp(repo, merger)
 	dataFilesChangesBus := bus.NewDataFilesManager()
 	dataFilesChangesBus.OnDataFileCreated(
 		func(header *domain.DataFileHeader) {
 			_ = idx.AddDataFile(header)
 		},
 	)
-	dataFileFactory := datastor.NewDataFileWriterFactory(repo, compression.Factory, log.NewEntry(log.StandardLogger()))
-	dataPageHeaderFactory := datastor.NewDataPageHeaderFactory()
+
 	sequentialWriter := datastor.NewSequentialLogCollectorFactory(
 		dataFileFactory,
 		dataPageHeaderFactory,
@@ -54,7 +70,7 @@ func main() {
 		return memtable.NewHeapChunk(maxSize, maxRecords)
 	}, flusher, 60*time2.Second)
 
-	storage := datastor.NewPersistentStorage(repo, memTable, idx)
+	storage := datastor.NewPersistentStorage(memTable, dataFileManagerFactory, dataPageReaderFactory, idx)
 	defer storage.Close()
 	queryBuilderFactory := query.NewQueryBuilderFactory()
 	queryProcessor := query.NewPreparer(filters.Factory, label_conditions.Factory)

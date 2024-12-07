@@ -22,7 +22,7 @@ const pagesCount = 10
 func main() {
 
 	codec := serializer.Default
-	compressionType := compression_types.Zstd
+	compressionType := compression_types.None
 	_ = os.Remove(fileName)
 	fh, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {

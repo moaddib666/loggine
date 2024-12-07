@@ -111,7 +111,7 @@ func (d *DataFileReader) CreateDataPage(pageNumber uint32) error {
 
 // readDataPage reads data page from the data file
 func (d *DataFileReader) readDataPage() error {
-	d.logger.Debug("Reading data page header from the file.")
+	d.logger.Debugf("Reading data page header from the file '%s'", d.source.File.Name())
 
 	// Read the data page header
 	_, err := d.codec.ReadDataPageHeader(d.currentDataPageHeader, d.source)

@@ -10,14 +10,13 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"io"
-	"path"
-	"path/filepath"
 )
 
 var _ ports.Merger = &Merger{}
 
 // Merger merges two data pages or data files into one.
 type Merger struct {
+	repo            ports.DataFileRepository
 	dfWriterFactory ports.DataFileWriterFactory
 	dfReaderFactory ports.DataFileReaderFactory
 	dpReaderFactory ports.DataPageReaderFactory
@@ -208,10 +207,8 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 	// Create a new data file header that combines df1 and df2
 	newHeader := m.mergeDataFileHeaders(df1, df2, uuid.New().ID())
 
-	// FIXME: DataFileRepository should be responsible for creating a new data file
-	dirOfDf1 := filepath.Dir(df1.File.Name())
 	// Create a new data file
-	mergedDataFile, err := domain.NewWriteOnlyDataFile(newHeader, path.Join(dirOfDf1, newHeader.String()))
+	mergedDataFile, err := m.repo.CreateFromHeader(newHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -228,9 +225,11 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 	// Create data file readers for df1 and df2
 	dfReader1 := m.dfReaderFactory.FromDataFile(df1)
 	dfReader2 := m.dfReaderFactory.FromDataFile(df2)
-	var dfReadPages1Count uint32 = 0
-	var dfReadPages2Count uint32 = 0
+	var dfReaderEof1, dfReaderEof2 = false, false
 	for {
+		if dfReaderEof1 && dfReaderEof2 {
+			break
+		}
 		// Select the data page from df1
 		dfReader1CurrentDataPageHeader, err := dfReader1.GetCurrentDataPageHeader()
 		if err != nil {
@@ -241,10 +240,6 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 			return nil, err
 		}
 
-		// if page1.Number == page2.Number then merge the pages
-		// if page1.Number < page2.Number then write page1 and select next page from df1
-		// if page1.Number > page2.Number then write page2 and select next page from df2
-		// repeat until both readers are at the end of the file
 		if dfReader1CurrentDataPageHeader.Number == dfReader2CurrentDataPageHeader.Number {
 			dp1 := domain.NewReadOnlyDataPage(dfReader1CurrentDataPageHeader, dfReader1.GetDataPageReader())
 			dp2 := domain.NewReadOnlyDataPage(dfReader2CurrentDataPageHeader, dfReader2.GetDataPageReader())
@@ -257,53 +252,68 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 			if _, err := io.Copy(mergedDataFile, mergedDataPage); err != nil {
 				return nil, err
 			}
-			// TODO: refactor this
 			if _, err := dfReader1.NextDataPage(); err != nil {
 				if !errors.Is(err, internal_errors.NoDataPagesLeft) {
 					return nil, err
 				}
+				dfReaderEof1 = true
 			}
 			if _, err := dfReader2.NextDataPage(); err != nil {
 				if !errors.Is(err, internal_errors.NoDataPagesLeft) {
 					return nil, err
 				}
+				dfReaderEof2 = true
 			}
-		} else if dfReader1CurrentDataPageHeader.Number < dfReader2CurrentDataPageHeader.Number && dfReadPages1Count < dfReader1CurrentDataPageHeader.Number {
-			// workaround to avoid seek for header
-			_, _ = m.codec.WriteDataPageHeader(dfReader1CurrentDataPageHeader, mergedDataFile)
-			if _, err := io.Copy(mergedDataFile, dfReader1.GetDataPageReader()); err != nil {
-				return nil, err
-			}
-			if _, err := dfReader1.NextDataPage(); err != nil {
-				return nil, err
-			}
-			dfReadPages1Count++
-		} else if dfReadPages2Count < dfReader2CurrentDataPageHeader.Number {
-			// workaround to avoid seek for header
-			_, _ = m.codec.WriteDataPageHeader(dfReader2CurrentDataPageHeader, mergedDataFile)
-			if _, err := io.Copy(mergedDataFile, dfReader2.GetDataPageReader()); err != nil {
-				return nil, err
-			}
-			if _, err := dfReader2.NextDataPage(); err != nil {
-				return nil, err
-			}
-			dfReadPages2Count++
-		}
-		if mergedDataFile.Header.LastDataPageNumber == dfReader1CurrentDataPageHeader.Number ||
-			mergedDataFile.Header.LastDataPageNumber == dfReader2CurrentDataPageHeader.Number {
-			break
+			continue
 		}
 
+		var selectedDataPageHeader *domain.DataPageHeader
+		var selectedDataFileReader ports.DataFileReader
+		var eofPointer *bool = nil
+		// TODO: optimize this if eof1 or eof2 we can just copy the rest of the file to the merged file and break
+		if dfReaderEof1 {
+			selectedDataPageHeader = dfReader2CurrentDataPageHeader
+			selectedDataFileReader = dfReader2
+			eofPointer = &dfReaderEof2
+		} else if dfReaderEof2 {
+			selectedDataPageHeader = dfReader1CurrentDataPageHeader
+			selectedDataFileReader = dfReader1
+			eofPointer = &dfReaderEof1
+		} else if dfReader1CurrentDataPageHeader.Number < dfReader2CurrentDataPageHeader.Number {
+			selectedDataPageHeader = dfReader1CurrentDataPageHeader
+			selectedDataFileReader = dfReader1
+			eofPointer = &dfReaderEof1
+		} else {
+			selectedDataPageHeader = dfReader2CurrentDataPageHeader
+			selectedDataFileReader = dfReader2
+			eofPointer = &dfReaderEof2
+		}
+
+		if _, err := m.codec.WriteDataPageHeader(selectedDataPageHeader, mergedDataFile); err != nil {
+			return nil, err
+		}
+
+		if _, err := io.Copy(mergedDataFile, selectedDataFileReader.GetDataPageReader()); err != nil {
+			return nil, err
+		}
+		if _, err := selectedDataFileReader.NextDataPage(); err != nil {
+			if !errors.Is(err, internal_errors.NoDataPagesLeft) {
+				return nil, err
+			}
+			*eofPointer = true
+		}
 	}
+
 	return mergedDataFile, nil
 }
 
 // NewMerger creates a new Merger.
-func NewMerger(dfWriterFactory ports.DataFileWriterFactory, dfReaderFactory ports.DataFileReaderFactory, dpReaderFactory ports.DataPageReaderFactory, codec ports.Serializer) *Merger {
+func NewMerger(dfWriterFactory ports.DataFileWriterFactory, dfReaderFactory ports.DataFileReaderFactory, dpReaderFactory ports.DataPageReaderFactory, repo ports.DataFileRepository) *Merger {
 	return &Merger{
 		dfWriterFactory: dfWriterFactory,
 		dfReaderFactory: dfReaderFactory,
 		dpReaderFactory: dpReaderFactory,
-		codec:           codec,
+		codec:           repo.Codec(),
+		repo:            repo,
 	}
 }

@@ -33,12 +33,24 @@ func (d *DataFileRepository) open(fullPath string) (*domain.DataFile, error) {
 }
 
 func (d *DataFileRepository) Open(fileName string) (*domain.DataFile, error) {
-	fullPath := d.constructDataFileLocation(fileName)
+	fullPath := d.GetDataFileFullPath(fileName)
 	return d.open(fullPath)
 }
 
-// constructDataFileLocation constructs the path to the data file
-func (d *DataFileRepository) constructDataFileLocation(name string) string {
+// Delete deletes a data file from the repository
+func (d *DataFileRepository) Delete(fileName string) error {
+	fullPath := d.GetDataFileFullPath(fileName)
+	log.Debugf("Deleting data file: %s", fullPath)
+	return os.Remove(fullPath)
+}
+
+// DeleteByHeader deletes a data file from the repository by header
+func (d *DataFileRepository) DeleteByHeader(header *domain.DataFileHeader) error {
+	return d.Delete(header.String())
+}
+
+// GetDataFileFullPath constructs the path to the data file
+func (d *DataFileRepository) GetDataFileFullPath(name string) string {
 	if d.ext != "" {
 		name += "." + d.ext
 	}
@@ -49,8 +61,13 @@ func (d *DataFileRepository) constructDataFileLocation(name string) string {
 func (d *DataFileRepository) Create(y, m, day uint64) (*domain.DataFile, error) {
 	id := uuid.New().ID()
 	dataFileHeader := domain.NewDataFileHeader(1, id, y, m, day)
-	log.Debugf("Creating data file: %s", dataFileHeader)
-	return domain.NewWriteOnlyDataFile(dataFileHeader, d.constructDataFileLocation(dataFileHeader.String()))
+	return d.CreateFromHeader(dataFileHeader)
+}
+
+// CreateFromHeader creates a new data file in the repository from a header
+func (d *DataFileRepository) CreateFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error) {
+	log.Debugf("Creating data file: %s", header)
+	return domain.NewWriteOnlyDataFile(header, d.GetDataFileFullPath(header.String()))
 }
 
 // Codec returns the codec used by the repository

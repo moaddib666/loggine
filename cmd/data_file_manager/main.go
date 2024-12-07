@@ -63,7 +63,7 @@ func panicOnError(err error) {
 }
 
 // readChunk reads a chunk file and processes it, given the necessary factories.
-func readChunk(fileName string, factory ports.DataFileManagerFactory, dataPageReaderFactory ports.DataPageReaderFactory) error {
+func readChunk(fileName string, factory ports.DataFileReaderFactory, dataPageReaderFactory ports.DataPageReaderFactory) error {
 	// Initialize the data file manager
 	manager, err := factory.NewDataFileManager(fileName)
 	if err != nil {
@@ -152,7 +152,7 @@ func processDataPage(pageReader ports.DataPageReader, recordCount int) int {
 }
 
 // processAllChunks processes all chunk files from the provided directory using the provided factories.
-func processAllChunks(directory string, factory ports.DataFileManagerFactory, dataPageReaderFactory ports.DataPageReaderFactory) error {
+func processAllChunks(directory string, factory ports.DataFileReaderFactory, dataPageReaderFactory ports.DataPageReaderFactory) error {
 	// Find all files in the directory with a .chunk extension
 	files, err := filepath.Glob(filepath.Join(directory, "*.chunk"))
 	if err != nil {

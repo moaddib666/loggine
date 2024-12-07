@@ -5,6 +5,7 @@ import (
 	"LogDb/internal/ports"
 	"fmt"
 	log "github.com/sirupsen/logrus"
+	"sort"
 	"sync"
 	"time"
 )
@@ -22,6 +23,7 @@ type Timestamp struct {
 	mu      sync.Mutex
 	storage ports.DataStorage
 	repo    ports.DataFileRepository
+	merger  ports.Merger
 }
 
 func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]ports.IndexOperation, error) {
@@ -61,10 +63,11 @@ func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]ports.IndexOpe
 }
 
 // NewTimestamp creates a new Timestamp index.
-func NewTimestamp(repo ports.DataFileRepository) *Timestamp {
+func NewTimestamp(repo ports.DataFileRepository, merger ports.Merger) *Timestamp {
 	return &Timestamp{
-		repo:  repo,
-		index: make(map[string][]ports.IndexItem),
+		repo:   repo,
+		merger: merger,
+		index:  make(map[string][]ports.IndexItem),
 	}
 }
 
@@ -110,33 +113,113 @@ func (t *Timestamp) load() error {
 //	return nil, false
 //}
 
+// addDataFile - adds a DataFileHeader to the index
+func (t *Timestamp) addDataFile(header *domain.DataFileHeader) (ports.IndexItem, error) {
+	if _, ok := t.index[header.Time().Format("2006-01-02")]; !ok {
+		t.index[header.Time().Format("2006-01-02")] = make([]ports.IndexItem, 0)
+	}
+	item := NewIndexItem(header)
+	t.index[header.Time().Format("2006-01-02")] = append(t.index[header.Time().Format("2006-01-02")], item)
+	return item, nil
+}
+
 // AddDataFile - adds a DataFileHeader to the index
 func (t *Timestamp) AddDataFile(header *domain.DataFileHeader) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	if _, ok := t.index[header.Time().Format("2006-01-02")]; !ok {
-		t.index[header.Time().Format("2006-01-02")] = make([]ports.IndexItem, 0)
+	_, err := t.addDataFile(header)
+	if err != nil {
+		return err
 	}
-	t.index[header.Time().Format("2006-01-02")] = append(t.index[header.Time().Format("2006-01-02")], NewIndexItem(header))
+	return t.merge(header.Time().Format("2006-01-02"))
+}
+
+// merge merges the given index with the current index.
+func (t *Timestamp) merge(key string) error {
+	items, ok := t.index[key]
+	if !ok {
+		return nil
+	}
+	if len(items) < 2 {
+		return nil
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].GetHeader().FirstDataPageNumber < items[j].GetHeader().FirstDataPageNumber
+	})
+	var target = items[0]
+	// Merge the data files into a single data file
+	for i := 1; i < len(items); i++ {
+		var err error
+		target, err = t.mergeSequentially(target, items[i])
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-// DeleteDataFile - deletes a DataFileHeader from the index
-func (t *Timestamp) DeleteDataFile(df *domain.DataFileHeader) error {
+// mergeSequentially merges two data files sequentially.
+func (t *Timestamp) mergeSequentially(target, source ports.IndexItem) (ports.IndexItem, error) {
+	targetOp, err := target.AwaitWriteAccess()
+	if err != nil {
+		return nil, err
+	}
+	defer targetOp.Done()
+
+	sourceOp, err := source.AwaitWriteAccess()
+	if err != nil {
+		return nil, err
+	}
+	defer sourceOp.Done()
+
+	// Merge the data files
+	targetDataFile, err := targetOp.GetDataFile(t.repo.GetDataFileFullPath(target.GetHeader().String()))
+	if err != nil {
+		return nil, err
+	}
+
+	sourceDataFile, err := sourceOp.GetDataFile(t.repo.GetDataFileFullPath(source.GetHeader().String()))
+	if err != nil {
+		return nil, err
+	}
+
+	mergedDataFile, err := t.merger.MergeDataFiles(targetDataFile, sourceDataFile)
+
+	if err != nil {
+		return nil, err
+	}
+	// Add a new data file to the index
+	// Remove the source data file from the index
+	// Remove the target data file from the index
+	err = t.deleteDataFile(targetDataFile.Header)
+	if err != nil {
+		return nil, err
+	}
+	err = t.deleteDataFile(sourceDataFile.Header)
+	if err != nil {
+		return nil, err
+	}
+	return t.addDataFile(mergedDataFile.Header)
+}
+
+// deleteDataFile - deletes a DataFileHeader from the index
+func (t *Timestamp) deleteDataFile(df *domain.DataFileHeader) error {
 	if _, ok := t.index[df.Time().Format("2006-01-02")]; !ok {
 		return nil
 	}
 	for i, idxItem := range t.index[df.Time().Format("2006-01-02")] {
 		if idxItem.GetHeader().Id == df.Id {
-			op, err := idxItem.AwaitWriteAccess()
-			if err != nil {
-				return err
-			}
-			t.mu.Lock()
+			//op, err := idxItem.AwaitWriteAccess()
+			//defer op.Done()
+			//if err != nil {
+			//	return err
+			//}
+			//t.mu.Lock()
 			t.index[df.Time().Format("2006-01-02")] = append(t.index[df.Time().Format("2006-01-02")][:i], t.index[df.Time().Format("2006-01-02")][i+1:]...)
-			t.mu.Unlock()
-			return op.Done()
+			//t.mu.Unlock()
+			return t.repo.DeleteByHeader(df)
 		}
 	}
 	return nil
