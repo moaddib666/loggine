@@ -8,19 +8,17 @@ import (
 )
 
 type DefaultDataFileFactory struct {
-	codec             ports.Serializer
-	compressorFactory ports.CompressionFactoryMethod
-	logger            *logrus.Entry
-	repo              ports.DataFileRepository
+	codec  ports.Serializer
+	logger *logrus.Entry
+	repo   ports.DataFileRepository
 }
 
 // NewDataFileWriterFactory creates a new DefaultDataFileFactory
-func NewDataFileWriterFactory(repo ports.DataFileRepository, compressorFactory ports.CompressionFactoryMethod, logger *logrus.Entry) ports.DataFileWriterFactory {
+func NewDataFileWriterFactory(repo ports.DataFileRepository, logger *logrus.Entry) ports.DataFileWriterFactory {
 	return &DefaultDataFileFactory{
-		codec:             repo.Codec(),
-		compressorFactory: compressorFactory,
-		logger:            logger,
-		repo:              repo,
+		codec:  repo.Codec(),
+		logger: logger,
+		repo:   repo,
 	}
 }
 
@@ -28,20 +26,6 @@ func NewDataFileWriterFactory(repo ports.DataFileRepository, compressorFactory p
 func (f *DefaultDataFileFactory) FromDataFile(dataFile *domain.DataFile) (ports.DataFileWriter, error) {
 	return NewDataFileWriter(dataFile, f.codec, f.logger), nil
 }
-
-//// New creates a new instance of DataFileWriter
-//func (f *DefaultDataFileFactory) New() (ports.DataFileWriter, error) {
-//	dataFileHeader := domain.NewEmptyDataFileHeader()
-//	dataFile, err := domain.NewWriteOnlyDataFile(dataFileHeader, f.GetDataFileFullPath(dataFileHeader.String()))
-//	if err != nil {
-//		f.logger.WithError(err).Error("failed to create data file")
-//		return nil, err
-//	}
-//	if err := f.init(dataFile); err != nil {
-//		return nil, err
-//	}
-//	return NewDataFileWriter(dataFile, f.codec, f.logger), nil
-//}
 
 // init initializes the data file writer
 func (f *DefaultDataFileFactory) init(dataFile *domain.DataFile) error {

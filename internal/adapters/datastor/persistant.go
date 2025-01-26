@@ -62,25 +62,6 @@ func (p *PersistentStorage) initIndexes() {
 	}
 }
 
-// deleteFromIndex deletes the data file from the indexes
-//func (p *PersistentStorage) deleteFromIndex(df *domain.DataFileHeader) error {
-//	// Delete from the primary index
-//	err := p.primaryIndex.deleteDataFile(df)
-//	if err != nil {
-//		return fmt.Errorf("failed to delete data file from primary index: %w", err)
-//	}
-//
-//	// Delete from the secondary indexes
-//	for _, index := range p.indexes {
-//		err = index.deleteDataFile(df)
-//		if err != nil {
-//			return fmt.Errorf("failed to delete data file from secondary index: %w", err)
-//		}
-//	}
-//
-//	return nil
-//}
-
 // updateIndex updates the indexes with the new data file
 func (p *PersistentStorage) updateIndex(df *domain.DataFileHeader) error {
 	// TODO now headers not updated in index just added and removed
@@ -118,8 +99,8 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 	// Query the secondary indexes if any
 
 	// Iterate over the data files
-	for _, df := range idxOperations {
-		dataFileManager, err := p.dataFileManagerFactory.NewDataFileManager(df.GetDataFileHeader().String())
+	for _, idxOp := range idxOperations {
+		dataFileManager, err := p.dataFileManagerFactory.NewDataFileManager(idxOp.GetDataFileHeader().String())
 		if err != nil {
 			query.SetError(fmt.Errorf("failed to get data file header: %w", err))
 			return query.Result()
@@ -171,6 +152,9 @@ func (p *PersistentStorage) Query(query ports.PreparedQuery) (*domain.QueryResul
 			}
 		}
 
+	}
+	for _, idxOp := range idxOperations {
+		idxOp.Done()
 	}
 	return query.Result()
 }

@@ -82,13 +82,11 @@ func NewDataFileWriter(dataFile *domain.DataFile, codec ports.Serializer, logger
 		source:               dataFile,
 		bufferFlushSizeBytes: 1024 * 1024, // 1MB
 	}
-	// FIXME: Move this to configurable options
-	WithAutoFlush(5*time.Second, dfw)
 	return dfw
 }
 
 // WithAutoFlush(time time.Duration)
-func WithAutoFlush(interval time.Duration, dfw *DataFileWriter) {
+func WithAutoFlush(interval time.Duration, dfw ports.DataFileWriter) {
 	go func() {
 		for {
 			select {

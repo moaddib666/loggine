@@ -17,6 +17,8 @@ definitions:
     type: object
   web_api.SearchReport:
     properties:
+      scanned_records:
+        type: integer
       time_taken:
         type: number
       total_records:

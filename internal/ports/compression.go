@@ -16,4 +16,14 @@ type Compression interface {
 	DecompressStream(reader io.Reader, writer io.Writer) (int64, error)
 }
 
+type Compressible interface {
+	// Compress compresses the data.
+	Compress() error
+}
+
+type CompressionPolicy interface {
+	// Apply applies the policy to the target.
+	Apply(target Compressible)
+}
+
 type CompressionFactoryMethod func(compressorType compression_types.CompressionType) Compression

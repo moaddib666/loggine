@@ -165,6 +165,9 @@ const docTemplate = `{
         "web_api.SearchReport": {
             "type": "object",
             "properties": {
+                "scanned_records": {
+                    "type": "integer"
+                },
                 "time_taken": {
                     "type": "number"
                 },

@@ -130,6 +130,10 @@ type DataFileRepository interface {
 	Create(y, m, day uint64) (*domain.DataFile, error)
 	// CreateFromHeader creates a new data file in the repository from a header
 	CreateFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error)
+	// CreateTempFromHeader creates a new temporary data file in the repository from a header
+	CreateTempFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error)
+	// MakePermanentFromHeader moves a temporary data file to a permanent location
+	MakePermanentFromHeader(tempFile *domain.DataFile) error
 	// Codec returns the codec used by the repository
 	Codec() Serializer
 	// FileExtension GetFileExtension returns the file extension used by the repository

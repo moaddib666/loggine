@@ -8,3 +8,8 @@ type Merger interface {
 	// MergeDataFiles merges two data files into one.
 	MergeDataFiles(df1, df2 *domain.DataFile) (*domain.DataFile, error)
 }
+
+type DataCompressor interface {
+	// CompressDataFile compresses a data file.
+	CompressDataFile(df *domain.DataFile) (*domain.DataFile, error)
+}

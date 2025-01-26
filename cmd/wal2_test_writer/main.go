@@ -20,7 +20,7 @@ func init() {
 }
 func main() {
 	codec := serializer.Default
-	dataFileFactory := datastor.NewDataFileWriterFactory(".wal", codec, compression.Factory, log.NewEntry(log.New()))
+	dataFileFactory := datastor.NewDataFileWriterFactory(".wal", compression.Factory)
 
 	repo := wal.NewV2Writer(&wal.V2WriterConfig{
 		BaseDir:       ".wal",

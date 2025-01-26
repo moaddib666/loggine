@@ -1,6 +1,5 @@
 # Go parameters
 GO=go
-BINARY=benchmark_app
 OUTPUT=./bin
 GO_FLAGS=-ldflags="-s -w"
 .PHONY: all build run clean bench
@@ -17,8 +16,14 @@ GO_FLAGS=-ldflags="-s -w"
 .build-compressor:
 	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/compressor ./cmd/compression_challange/...
 
+.build-app:
+	$(GO) build $(GO_FLAGS) -o $(OUTPUT)/app ./cmd/application/...
+
 .docs:
 	swag init -g cmd/application/main.go -o internal/adapters/api/web_api/docs
 
-build: .docs .build-inspector .build-data-node .build-client .build-compressor
+build: .docs .build-inspector .build-app
+
+app: .build-app
+inspector: .build-inspector
 

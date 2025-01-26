@@ -5,6 +5,7 @@ import (
 	"LogDb/internal/ports"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -57,6 +58,11 @@ func (d *DataFileRepository) GetDataFileFullPath(name string) string {
 	return path.Join(d.basePath, name)
 }
 
+// GetDataFileFullTempPath constructs the path to the temporary data file
+func (d *DataFileRepository) GetDataFileFullTempPath(name string) string {
+	return d.GetDataFileFullPath(name) + ".tmp"
+}
+
 // Create creates a new data file in the repository Create(y, m, day uint64)
 func (d *DataFileRepository) Create(y, m, day uint64) (*domain.DataFile, error) {
 	id := uuid.New().ID()
@@ -68,6 +74,29 @@ func (d *DataFileRepository) Create(y, m, day uint64) (*domain.DataFile, error) 
 func (d *DataFileRepository) CreateFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error) {
 	log.Debugf("Creating data file: %s", header)
 	return domain.NewWriteOnlyDataFile(header, d.GetDataFileFullPath(header.String()))
+	// TODO: automatically add header to the file
+}
+
+// CreateTempFromHeader creates a new temporary data file in the repository from a header
+func (d *DataFileRepository) CreateTempFromHeader(header *domain.DataFileHeader) (*domain.DataFile, error) {
+	log.Debugf("Creating temporary data file: %s", header)
+	df, err := domain.NewWriteOnlyDataFile(header, d.GetDataFileFullTempPath(header.String()))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := df.File.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	if _, err := d.codec.WriteFileHeader(header, df); err != nil {
+		return nil, err
+	}
+	return df, nil
+}
+
+// MakePermanentFromHeader marks a temporary data file as final
+func (d *DataFileRepository) MakePermanentFromHeader(tempFile *domain.DataFile) error {
+	log.Debugf("Marking temporary data file as final: %s", tempFile.Header)
+	return os.Rename(d.GetDataFileFullTempPath(tempFile.Header.String()), d.GetDataFileFullPath(tempFile.Header.String()))
 }
 
 // Codec returns the codec used by the repository

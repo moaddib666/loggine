@@ -22,8 +22,14 @@ type DataFileHeader struct {
 	Day                 uint64    // 8 bytes
 	LastDataPageNumber  uint32    // 4 bytes (0 - 1439 pages / minutes)
 	FirstDataPageNumber uint32    // 4 bytes
-	Reserved            [252]byte // 256 bytes reserved for future use
+	Compressed          bool      // 1 byte
+	Reserved            [251]byte // 251 bytes reserved for future use
 	Checksum            uint64    // 8 bytes
+}
+
+// MarkCompressed marks the data file as compressed.
+func (h *DataFileHeader) MarkCompressed() {
+	h.Compressed = true
 }
 
 const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
@@ -34,6 +40,7 @@ const DataFileHeaderSize = int(unsafe.Sizeof(DataFileHeader{}.Version) +
 	unsafe.Sizeof(DataFileHeader{}.Day) +
 	unsafe.Sizeof(DataFileHeader{}.LastDataPageNumber) +
 	unsafe.Sizeof(DataFileHeader{}.FirstDataPageNumber) +
+	unsafe.Sizeof(DataFileHeader{}.Compressed) +
 	unsafe.Sizeof(DataFileHeader{}.Reserved) +
 	unsafe.Sizeof(DataFileHeader{}.Checksum),
 ) // 312 bytes

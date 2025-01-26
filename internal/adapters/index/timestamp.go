@@ -19,11 +19,12 @@ import (
 // Use b-tree to build and store the index where leaf node are
 // Timestamp is a simplified in-memory index that stores log records by day (YYYY-MM-DD).
 type Timestamp struct {
-	index   map[string][]ports.IndexItem // A map of dates to data files
-	mu      sync.Mutex
-	storage ports.DataStorage
-	repo    ports.DataFileRepository
-	merger  ports.Merger
+	index          map[string][]ports.IndexItem // A map of dates to data files
+	mu             sync.Mutex
+	storage        ports.DataStorage
+	repo           ports.DataFileRepository
+	merger         ports.Merger
+	dataCompressor ports.DataCompressor
 }
 
 func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]ports.IndexOperation, error) {
@@ -63,11 +64,12 @@ func (t *Timestamp) GetDataFilesForRead(q ports.PreparedQuery) ([]ports.IndexOpe
 }
 
 // NewTimestamp creates a new Timestamp index.
-func NewTimestamp(repo ports.DataFileRepository, merger ports.Merger) *Timestamp {
+func NewTimestamp(repo ports.DataFileRepository, merger ports.Merger, dataCompressor ports.DataCompressor) *Timestamp {
 	return &Timestamp{
-		repo:   repo,
-		merger: merger,
-		index:  make(map[string][]ports.IndexItem),
+		repo:           repo,
+		merger:         merger,
+		index:          make(map[string][]ports.IndexItem),
+		dataCompressor: dataCompressor,
 	}
 }
 
@@ -94,24 +96,6 @@ func (t *Timestamp) load() error {
 
 	return nil
 }
-
-// GetDataFile - returns the DataFileHeader for the given date
-//func (t *Timestamp) GetDataFile(ts time.Time) (*domain.DataFileHeader, bool) {
-//	t.mu.Lock()
-//	defer t.mu.Unlock()
-//
-//	idxItems, ok := t.index[ts.Format("2006-01-02")]
-//	minute := uint32(ts.Hour()*60 + ts.Minute())
-//	for _, df := range idxItems {
-//		if df.LastDataPageNumber > minute {
-//			continue
-//		}
-//		if df.LastDataPageNumber <= minute {
-//			return df, ok
-//		}
-//	}
-//	return nil, false
-//}
 
 // addDataFile - adds a DataFileHeader to the index
 func (t *Timestamp) addDataFile(header *domain.DataFileHeader) (ports.IndexItem, error) {
@@ -221,6 +205,51 @@ func (t *Timestamp) deleteDataFile(df *domain.DataFileHeader) error {
 			//t.mu.Unlock()
 			return t.repo.DeleteByHeader(df)
 		}
+	}
+	return nil
+}
+
+// Compress compresses the data files in the index.
+func (t *Timestamp) Compress() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var dates []string
+	for date := range t.index {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates) // Sort dates in ascending order
+
+	// Compress all except the newest date as merging is approaching
+	for _, date := range dates[:len(dates)-1] { // Exclude the last (newest) date
+		idxItems := t.index[date]
+
+		for i := 0; i < len(idxItems); i++ {
+			idxItem := idxItems[i]
+			dfh := idxItem.GetHeader()
+			if dfh.Compressed {
+				continue
+			}
+			if err := t.compressDataFile(idxItem); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// compressDataFile compresses a data file
+func (t *Timestamp) compressDataFile(idxItem ports.IndexItem) error {
+	op, err := idxItem.AwaitWriteAccess()
+	if err != nil {
+		return err
+	}
+	defer op.Done()
+	df, err := op.GetDataFile(t.repo.GetDataFileFullPath(idxItem.GetHeader().String()))
+	if err != nil {
+		return err
+	}
+	if _, err := t.dataCompressor.CompressDataFile(df); err != nil {
+		return err
 	}
 	return nil
 }

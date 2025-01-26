@@ -4,6 +4,7 @@ import (
 	"LogDb/internal/adapters/api/web_api"
 	"LogDb/internal/adapters/bus"
 	"LogDb/internal/adapters/compression"
+	"LogDb/internal/adapters/compressor"
 	"LogDb/internal/adapters/datastor"
 	"LogDb/internal/adapters/filters"
 	"LogDb/internal/adapters/filters/label_conditions"
@@ -14,13 +15,15 @@ import (
 	"LogDb/internal/adapters/query"
 	"LogDb/internal/adapters/serializer"
 	"LogDb/internal/domain"
+	"LogDb/internal/domain/compression_types"
 	"LogDb/internal/ports"
+	"context"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"os"
-	time2 "time"
+	"time"
 )
 
 const BaseDir = ".storage"
@@ -37,8 +40,9 @@ func main() {
 	prometheusExporter.StartHTTPServer("9090")
 	r := gin.Default()
 	codec := serializer.Default
+	compressionFactory := compression.Factory
 	repo := datastor.NewDataFileRepository(BaseDir, codec, DataFileExt)
-	dataFileFactory := datastor.NewDataFileWriterFactory(repo, compression.Factory, log.NewEntry(log.StandardLogger()))
+	dataFileFactory := datastor.NewDataFileWriterFactory(repo, log.NewEntry(log.StandardLogger()))
 	dataPageHeaderFactory := datastor.NewDataPageHeaderFactory()
 
 	dataFileManagerFactory := datastor.NewDataFileManagerFactory(repo)
@@ -51,7 +55,16 @@ func main() {
 		repo,
 	)
 
-	idx := index.NewTimestamp(repo, merger)
+	dataCompressor := compressor.NewDataFileCompressor(
+		repo,
+		dataFileFactory,
+		dataFileManagerFactory,
+		compressionFactory,
+		compression_types.Zstd,
+	)
+	compressionPolicy := compressor.NewIntervalCompressPolicy(context.Background(), 60*time.Second)
+	idx := index.NewTimestamp(repo, merger, dataCompressor)
+	compressionPolicy.Apply(idx)
 	dataFilesChangesBus := bus.NewDataFilesManager()
 	dataFilesChangesBus.OnDataFileCreated(
 		func(header *domain.DataFileHeader) {
@@ -68,7 +81,7 @@ func main() {
 	defer flusher.Close()
 	memTable := memtable.NewMemTable(1024*1024*1024, 1_000_000, func(maxSize, maxRecords int) ports.HeapChunk {
 		return memtable.NewHeapChunk(maxSize, maxRecords)
-	}, flusher, 60*time2.Second)
+	}, flusher, 60*time.Second)
 
 	storage := datastor.NewPersistentStorage(memTable, dataFileManagerFactory, dataPageReaderFactory, idx)
 	defer storage.Close()

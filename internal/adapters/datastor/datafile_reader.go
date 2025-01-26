@@ -173,7 +173,15 @@ func (d *DataFileReader) NextDataPage() (*domain.DataPageHeader, error) {
 		return nil, internal_errors.NoDataPagesLeft
 	}
 	// TODO: understand if any messages was read and minus thaier size from the page size to seek to the next page
-	d.source.Seek(int64(d.currentDataPageHeader.PageSize), io.SeekCurrent)
+	if d.currentDataPageHeader.CompressedPageSize != 0 {
+		if _, err := d.source.Seek(int64(d.currentDataPageHeader.CompressedPageSize), io.SeekCurrent); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := d.source.Seek(int64(d.currentDataPageHeader.PageSize), io.SeekCurrent); err != nil {
+			return nil, err
+		}
+	}
 	err := d.readDataPage()
 	if err != nil {
 		return nil, err

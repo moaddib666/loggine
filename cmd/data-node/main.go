@@ -38,7 +38,7 @@ const ApacheLogsFile = "assets/logfiles.log"
 
 func main() {
 	codec := serializer.Default
-	idx := index.NewTimestamp(BaseDir, codec)
+	idx := index.NewTimestamp(BaseDir, codec, nil)
 	stor := datastor.NewPersistentStorage(BaseDir, codec, idx)
 	defer stor.Close()
 	//writeTimeLimitRecords(5*time.Minute, 1*time.Second, 10_000, stor)

@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"LogDb/internal/adapters/datastor"
 	"LogDb/internal/domain"
 	"LogDb/internal/internal_errors"
 	"LogDb/internal/ports"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"time"
 )
 
 var _ ports.Merger = &Merger{}
@@ -218,7 +220,8 @@ func (m *Merger) mergeToANewDataFile(df1, df2 *domain.DataFile) (*domain.DataFil
 	}
 
 	newDataFileWriter, _ := m.dfWriterFactory.FromDataFile(mergedDataFile)
-
+	// TODO: Work with this looks like an issue
+	datastor.WithAutoFlush(5*time.Second, newDataFileWriter)
 	// Create a new data file writer
 	defer newDataFileWriter.Close()
 
